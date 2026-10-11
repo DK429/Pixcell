@@ -14,10 +14,12 @@ export function geometry(bitmap,edit,maxEdge=0,viewport=null) {
   if(!ctx)throw new Error('Your browser could not create an image canvas.');
   ctx.imageSmoothingEnabled=scaleX!==1||scaleY!==1||Boolean(edit.straighten);
   ctx.imageSmoothingQuality='high';
+  ctx.save();
   ctx.translate(-(viewport?.x??0),-(viewport?.y??0));
   ctx.scale(scaleX,scaleY);ctx.translate(native.width/2,native.height/2);
   ctx.rotate((edit.rotation+(edit.straighten||0))*Math.PI/180);
   ctx.scale(edit.flipX?-1:1,edit.flipY?-1:1);
   ctx.drawImage(bitmap,crop.x,crop.y,crop.w,crop.h,-crop.w/2,-crop.h/2,crop.w,crop.h);
+  ctx.restore();
   return canvas;
 }
