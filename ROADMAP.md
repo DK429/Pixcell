@@ -6,13 +6,11 @@ The goal is a competitive photography tool, delivered in independently testable 
 
 Still-image import, non-destructive global edits, crop/orientation, presets, histogram, history, sidecar recipes and browser-native rendered export. Export pixels come from the original image rather than the preview. This is a base for development, not professional editor parity.
 
-## 2. RAW and precision
-
-### Usability and reliability — v0.2
+## 2. Usability and reliability — v0.2
 
 Before RAW work, this release adds native-pixel zoom and pan, a 100% detail view, clipping indicators, straightening with edge trimming, and optional local recovery of the source and edits. Browser workflows cover desktop and mobile layouts in Chromium, Firefox and WebKit and gate live deployment. See README for recovery limits, shortcuts and the actual test coverage.
 
-RAW and precision remain the next major development stage:
+## 3. RAW and precision
 
 - Integrate a real RAW decoder such as LibRaw compiled to WebAssembly, or a separately deployed decoding service. Audit licensing and redistribution requirements before selecting a distribution.
 - Support DNG and a defined camera-model matrix; record whether full sensor data or only an embedded preview was decoded. An embedded JPEG is not full RAW support.
@@ -21,15 +19,15 @@ RAW and precision remain the next major development stage:
 - Provide 16-bit TIFF/PNG output, ICC conversion and profiles; add HEIC/AVIF codecs only after licensing/browser suitability is established.
 - Validate against licensed or user-provided camera fixtures, reference renders, EXIF rotation, colour patches, clipped highlights and corrupt files.
 
-## 3. Professional adjustment and detail
+## 4. Professional adjustment and detail
 
 Tone curves, HSL and colour mixer, calibrated white balance, eyedropper, split toning, sharpening, noise reduction, lens correction, chromatic aberration, perspective/straightening, clipping indicators and 100% inspection. Tile large images; use cancellation and memory budgets rather than assuming full images fit in RAM.
 
-## 4. Local tools and organisation
+## 5. Local tools and organisation
 
 Brushes, gradients, radial masks, subject/sky selections, mask intersections, healing/clone, layers and compositing. Multi-image filmstrip, batch presets/exports, virtual copies, ratings, collections, before/after versions, recoverable local persistence and project packages. Keep full-resolution data and edit graphs distinct.
 
-## 5. Differentiation and production
+## 6. Differentiation and production
 
 Drone/landscape workflows, panorama and bracket/HDR merging, optional AI removal and denoise, focus stacking, export presets and watermarking. Treat remote processing as opt-in with visible consent, cost and data retention details. Add accessible touch workflows, colour/reference regression tests, cross-browser fixtures, worker recovery and crash handling.
 

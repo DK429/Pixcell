@@ -25,14 +25,18 @@ export function saveSession(source,state){
   const record={hash:source.hash,state:structuredClone(state),savedAt:Date.now()};
   return ordered(async()=>{
     const db=await database();
+    const previous=await new Promise((resolve,reject)=>{
+      const tx=db.transaction('session','readonly'),request=tx.objectStore('session').get('meta');
+      tx.oncomplete=()=>resolve(request.result);tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);
+    });
+    // Store bytes rather than a File/Blob for browser compatibility. Read the
+    // file before opening a write transaction, and only when the source changes.
+    const bytes=previous?.hash!==source.hash?await source.file.arrayBuffer():null;
     await new Promise((resolve,reject)=>{
       const tx=db.transaction('session','readwrite'),store=tx.objectStore('session');
-      const existing=store.get('meta');
-      existing.onsuccess=()=>{
-        if(existing.result?.hash!==source.hash){store.put({blob:source.file,name:source.file.name},'source');store.put({hash:source.hash},'meta');}
-        store.put(record,'edits');
-      };
       tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error||new Error('Local recovery save was interrupted.'));
+      if(bytes){store.put({bytes,name:source.file.name,type:source.file.type},'source');store.put({hash:source.hash},'meta');}
+      store.put(record,'edits');
     });
     return record.savedAt;
   });
@@ -49,8 +53,9 @@ export function readSession(){
     let edits=record.edits;
     try{const draft=JSON.parse(localStorage.getItem(DRAFT_KEY));if(draft?.hash===edits.hash&&draft.savedAt>=edits.savedAt)edits=draft;}catch{/* Ignore incomplete lightweight drafts. */}
     const state=validateState(edits.state);
-    if(!(record.source.blob instanceof Blob))throw new Error('The saved photograph is unavailable.');
-    return {file:new File([record.source.blob],record.source.name,{type:record.source.blob.type}),hash:edits.hash,state,savedAt:edits.savedAt};
+    const data=record.source.bytes||record.source.blob;
+    if(!(data instanceof ArrayBuffer)&&!(data instanceof Blob))throw new Error('The saved photograph is unavailable.');
+    return {file:new File([data],record.source.name,{type:record.source.type||data.type||''}),hash:edits.hash,state,savedAt:edits.savedAt};
   });
 }
 export function clearSession(){
