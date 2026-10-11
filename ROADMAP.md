@@ -8,6 +8,12 @@ Still-image import, non-destructive global edits, crop/orientation, presets, his
 
 ## 2. RAW and precision
 
+### Usability and reliability — v0.2
+
+Before RAW work, this release adds native-pixel zoom and pan, a 100% detail view, clipping indicators, straightening with edge trimming, and optional local recovery of the source and edits. Browser workflows cover desktop and mobile layouts in Chromium, Firefox and WebKit and gate live deployment. See README for recovery limits, shortcuts and the actual test coverage.
+
+RAW and precision remain the next major development stage:
+
 - Integrate a real RAW decoder such as LibRaw compiled to WebAssembly, or a separately deployed decoding service. Audit licensing and redistribution requirements before selecting a distribution.
 - Support DNG and a defined camera-model matrix; record whether full sensor data or only an embedded preview was decoded. An embedded JPEG is not full RAW support.
 - Use a linear, floating-point working buffer, actual sensor white balance, demosaic selection, black/white levels, highlight reconstruction and explicit source-to-working colour transforms.

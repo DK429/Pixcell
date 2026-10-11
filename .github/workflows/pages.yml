@@ -31,8 +31,12 @@ jobs:
         with:
           path: _site
 
-  deploy:
+  browser-checks:
     needs: build
+    uses: ./.github/workflows/browser.yml
+
+  deploy:
+    needs: [build, browser-checks]
     runs-on: ubuntu-latest
     permissions:
       pages: write

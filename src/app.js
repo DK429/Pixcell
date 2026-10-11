@@ -1,8 +1,13 @@
-import {CONTROLS,PRESETS,defaults,validateState,pixelCrop,outputSize,processPixels,histogram,History,clamp} from './engine.js';
+import {CONTROLS,PRESETS,defaults,validateState,compositionSize,outputSize,processPixels,histogram,clippingOverlay,History,clamp} from './engine.js';
+import {geometry} from './geometry.js';
+import {viewLayout,zoomAt} from './view.js';
+import {recoveryEnabled,setRecoveryEnabled,writeDraft,saveSession,readSession,clearSession} from './recovery.js';
 
 const $=id=>document.getElementById(id);
 let source=null, state=defaults(), history=new History(state), comparing=false, cropping=false;
 let draftCrop=null, renderVersion=0, loadVersion=0, previewTimer, toastTimer, exporting=false;
+let blocked=false,showClipping=false,view={mode:'fit',zoom:1,panX:0,panY:0};
+let autosaveEnabled=recoveryEnabled(),autosaveTimer,pendingRecovery=null;
 let worker=null, jobId=0;
 const jobs=new Map();
 try {
@@ -19,19 +24,28 @@ function process(data,adjustments){
 function toast(message){$('toast').textContent=message;$('toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').hidden=true,7000);}
 function status(message){$('status').textContent=message;}
 function basename(name){return name.replace(/\.[^.]+$/,'');}
-function busy(value){$('edit-controls').disabled=value||!source;$('export').disabled=value||!source;$('open').disabled=value;$('file').disabled=value;}
+function busy(value){blocked=value;$('edit-controls').disabled=value||!source;$('export').disabled=value||!source;$('open').disabled=value;$('welcome-open').disabled=value;$('demo').disabled=value;$('resume-session').disabled=value;$('file').disabled=value;sync();}
 function sync(){
   for(const c of CONTROLS){$('control-'+c.key).value=state.adjustments[c.key];$('value-'+c.key).textContent=formatControl(c,state.adjustments[c.key]);}
-  $('undo').disabled=!source||!history.canUndo||exporting||cropping;
-  $('redo').disabled=!source||!history.canRedo||exporting||cropping;
-  $('compare').disabled=!source||cropping||exporting;
+  $('undo').disabled=!source||!history.canUndo||blocked||cropping;
+  $('redo').disabled=!source||!history.canRedo||blocked||cropping;
+  $('compare').disabled=!source||cropping||blocked;
   $('compare').setAttribute('aria-pressed',String(comparing));
   $('crop-toggle').setAttribute('aria-pressed',String(cropping));
   $('flip-x').setAttribute('aria-pressed',String(state.flipX));
   $('flip-y').setAttribute('aria-pressed',String(state.flipY));
+  $('straighten').value=state.straighten;$('straighten-value').textContent=state.straighten.toFixed(1)+'°';$('straighten').disabled=cropping;
+  for(const id of ['fit','actual-size','zoom','zoom-in','zoom-out','clipping'])$(id).disabled=!source||blocked||cropping;
+  $('fit').setAttribute('aria-pressed',String(view.mode==='fit'));
+  $('actual-size').setAttribute('aria-pressed',String(view.mode==='zoom'&&view.zoom===1));
+  $('clipping').setAttribute('aria-pressed',String(showClipping));$('clipping-info').hidden=!showClipping;
+  if(view.mode==='fit')$('zoom').value='fit';
+  else if([.25,.5,1,2,4].includes(view.zoom))$('zoom').value=String(view.zoom);
+  else{$('custom-zoom').textContent=Math.round(view.zoom*100)+'%';$('custom-zoom').hidden=false;$('zoom').value='custom';}
+  $('view-hint').textContent=showClipping?'Clipping: blue shadows · red highlights':'Drag to pan · scroll or pinch to zoom';
   if(source){const size=outputSize(source.bitmap.width,source.bitmap.height,state);$('edited-size').textContent=`${size.width} × ${size.height}`;}
 }
-function commit(){history.push(state);sync();schedulePreview();}
+function commit(){history.push(state);sync();schedulePreview();scheduleAutosave();}
 function formatControl(c,v){return (v>0?'+':'')+(c.key==='exposure'?Number(v).toFixed(2):v)+(c.unit||'');}
 
 for(const [index,c] of CONTROLS.entries()){
@@ -40,7 +54,7 @@ for(const [index,c] of CONTROLS.entries()){
   const label=document.createElement('label');label.htmlFor='control-'+c.key;label.textContent=c.label;
   const value=document.createElement('output');value.id='value-'+c.key;value.htmlFor=label.htmlFor;
   const input=document.createElement('input');input.type='range';input.id=label.htmlFor;input.min=c.min;input.max=c.max;input.step=c.step;input.value=0;
-  input.oninput=()=>{state.adjustments[c.key]=Number(input.value);value.textContent=formatControl(c,Number(input.value));schedulePreview();};
+  input.oninput=()=>{state.adjustments[c.key]=Number(input.value);value.textContent=formatControl(c,Number(input.value));schedulePreview();scheduleAutosave();};
   input.onchange=commit;
   input.ondblclick=()=>{state.adjustments[c.key]=0;commit();};
   heading.append(label,value);row.append(heading,input);$(index<6?'light-controls':'colour-controls').append(row);
@@ -50,50 +64,113 @@ for(const [name,adjustments] of Object.entries(PRESETS)){
   button.onclick=()=>{state.adjustments={...defaults().adjustments,...adjustments};commit();};$('presets').append(button);
 }
 
-function geometry(bitmap,edit,maxEdge=0,white=false){
-  const crop=pixelCrop(bitmap.width,bitmap.height,edit.crop);
-  const size=outputSize(bitmap.width,bitmap.height,edit,maxEdge);
-  const canvas=document.createElement('canvas');canvas.width=size.width;canvas.height=size.height;
-  const ctx=canvas.getContext('2d',{willReadFrequently:true});if(!ctx)throw new Error('Your browser could not create an image canvas.');
-  if(white){ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);}
-  const swapped=edit.rotation%180!==0;
-  const drawW=swapped?size.height:size.width, drawH=swapped?size.width:size.height;
-  ctx.save();ctx.translate(size.width/2,size.height/2);ctx.rotate(edit.rotation*Math.PI/180);ctx.scale(edit.flipX?-1:1,edit.flipY?-1:1);
-  ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';
-  ctx.drawImage(bitmap,crop.x,crop.y,crop.w,crop.h,-drawW/2,-drawH/2,drawW,drawH);ctx.restore();
-  return canvas;
-}
-function schedulePreview(){++renderVersion;clearTimeout(previewTimer);previewTimer=setTimeout(renderPreview,45);}
+function previewEdit(){const edit=structuredClone(state);if(cropping){edit.crop=defaults().crop;edit.rotation=0;edit.straighten=0;edit.flipX=false;edit.flipY=false;}if(comparing)edit.adjustments=defaults().adjustments;return edit;}
+function currentLayout(edit=previewEdit()){return viewLayout(compositionSize(source.bitmap.width,source.bitmap.height,edit),$('stage').clientWidth,$('stage').clientHeight,cropping?{mode:'fit'}:view);}
+function schedulePreview(){++renderVersion;clearTimeout(previewTimer);if(source&&!exporting)status('Updating…');previewTimer=setTimeout(renderPreview,45);}
 async function renderPreview(){
   if(!source)return;
   const version=++renderVersion;
-  const edit=structuredClone(state);
-  if(cropping){edit.crop=defaults().crop;edit.rotation=0;edit.flipX=false;edit.flipY=false;}
-  if(comparing)edit.adjustments=defaults().adjustments;
+  const edit=previewEdit(),layout=currentLayout(edit);
   status('Updating…');
   try {
-    const canvas=geometry(source.bitmap,edit,1600);
+    const canvas=geometry(source.bitmap,edit,0,layout);
     const ctx=canvas.getContext('2d');const pixels=ctx.getImageData(0,0,canvas.width,canvas.height);
     const output=await process(pixels.data,edit.adjustments);
     if(version!==renderVersion)return;
+    if(showClipping&&!cropping&&!comparing)clippingOverlay(output.data);
     const preview=$('preview');preview.width=canvas.width;preview.height=canvas.height;
     preview.getContext('2d').putImageData(new ImageData(output.data,canvas.width,canvas.height),0,0);
-    $('canvas-wrap').hidden=false;$('welcome').hidden=true;$('before-label').hidden=!comparing;
-    fitCanvas();drawHistogram(output.bins);status(cropping?'Drag a crop region':comparing?'Original · same composition':'All edits applied');
+    $('canvas-wrap').hidden=false;$('welcome').hidden=true;$('before-label').hidden=!comparing;$('stage').classList.add('has-image');
+    layoutCanvas(layout);drawHistogram(output.bins);$('histogram-title').textContent=view.mode==='fit'||cropping?'HISTOGRAM':'HISTOGRAM · VIEWED AREA';
+    status(cropping?'Drag a crop region':comparing?'Original · same composition':'All edits applied');
   } catch(error){if(version===renderVersion){status('Preview failed');toast(error.message);}}
 }
-function fitCanvas(){
-  const canvas=$('preview');if(!canvas.width)return;
-  const rect=$('stage').getBoundingClientRect();const scale=Math.min((rect.width-52)/canvas.width,(rect.height-52)/canvas.height);
-  if(scale<=0)return;$('canvas-wrap').style.width=`${canvas.width*scale}px`;$('canvas-wrap').style.height=`${canvas.height*scale}px`;drawCropSelection();
+function layoutCanvas(layout){
+  const wrap=$('canvas-wrap'),canvas=$('preview');
+  wrap.style.width=layout.fullWidth+'px';wrap.style.height=layout.fullHeight+'px';wrap.style.left=layout.left+'px';wrap.style.top=layout.top+'px';
+  canvas.style.width=layout.width+'px';canvas.style.height=layout.height+'px';canvas.style.left=layout.x+'px';canvas.style.top=layout.y+'px';
+  if(!cropping){view.panX=layout.panX;view.panY=layout.panY;}drawCropSelection();
 }
-new ResizeObserver(fitCanvas).observe($('stage'));
+new ResizeObserver(()=>{if(source&&!blocked)schedulePreview();}).observe($('stage'));
 function drawHistogram(bins){
   const canvas=$('histogram'),ctx=canvas.getContext('2d');ctx.clearRect(0,0,canvas.width,canvas.height);
   const max=Math.max(1,...bins.flat());const colours=['#f0a89a','#b9dbad','#9fbbe4'];
   ctx.globalCompositeOperation='screen';
   for(let c=0;c<3;c++){ctx.fillStyle=colours[c]+'55';ctx.strokeStyle=colours[c];ctx.lineWidth=1.4;ctx.beginPath();ctx.moveTo(0,canvas.height);for(let i=0;i<256;i++)ctx.lineTo(i/255*canvas.width,canvas.height-2-Math.log1p(bins[c][i])/Math.log1p(max)*(canvas.height-10));ctx.lineTo(canvas.width,canvas.height);ctx.closePath();ctx.fill();ctx.stroke();}
   ctx.globalCompositeOperation='source-over';
+}
+
+function resetView(){view={mode:'fit',zoom:1,panX:0,panY:0};sync();schedulePreview();}
+function changeZoom(zoom,point){if(!source||blocked||cropping)return;view=zoomAt(currentLayout(),$('stage').clientWidth,$('stage').clientHeight,zoom,point);sync();schedulePreview();}
+$('fit').onclick=resetView;
+$('actual-size').onclick=()=>changeZoom(1);
+$('zoom').onchange=()=>{if($('zoom').value==='fit')resetView();else if($('zoom').value!=='custom')changeZoom(Number($('zoom').value));};
+$('zoom-in').onclick=()=>changeZoom(currentLayout().scale*1.25);
+$('zoom-out').onclick=()=>changeZoom(currentLayout().scale/1.25);
+$('clipping').onclick=()=>{showClipping=!showClipping;sync();schedulePreview();};
+$('stage').addEventListener('wheel',e=>{
+  if(!source||blocked||cropping)return;e.preventDefault();
+  const rect=$('stage').getBoundingClientRect();changeZoom(currentLayout().scale*Math.exp(-e.deltaY/500),{x:e.clientX-rect.left,y:e.clientY-rect.top});
+},{passive:false});
+$('stage').ondblclick=e=>{if(!source||blocked||cropping||e.target.closest('button'))return;view.mode==='zoom'&&view.zoom===1?resetView():changeZoom(1);};
+const pointers=new Map();let drag=null;
+function pointerLocation(e){const rect=$('stage').getBoundingClientRect();return {x:e.clientX-rect.left,y:e.clientY-rect.top};}
+function pointerPair(){const [a,b]=[...pointers.values()];return {distance:Math.hypot(a.x-b.x,a.y-b.y),centre:{x:(a.x+b.x)/2,y:(a.y+b.y)/2}};}
+$('stage').onpointerdown=e=>{
+  if(!source||blocked||cropping||e.button>0)return;e.preventDefault();$('stage').focus({preventScroll:true});
+  $('stage').setPointerCapture(e.pointerId);const point=pointerLocation(e);pointers.set(e.pointerId,point);
+  if(pointers.size===1){const layout=currentLayout();drag={point,panX:layout.panX,panY:layout.panY,scale:layout.scale};}
+  else drag=null;$('stage').classList.add('panning');
+};
+$('stage').onpointermove=e=>{
+  if(!pointers.has(e.pointerId)||blocked||cropping)return;
+  const previous=pointers.size===2?pointerPair():null,point=pointerLocation(e);pointers.set(e.pointerId,point);
+  if(pointers.size===2){const next=pointerPair();if(previous.distance>0){view=zoomAt(currentLayout(),$('stage').clientWidth,$('stage').clientHeight,currentLayout().scale*next.distance/previous.distance,previous.centre);view.panX+=next.centre.x-previous.centre.x;view.panY+=next.centre.y-previous.centre.y;}}
+  else if(drag)view={mode:'zoom',zoom:drag.scale,panX:drag.panX+point.x-drag.point.x,panY:drag.panY+point.y-drag.point.y};
+  sync();schedulePreview();
+};
+function finishPan(e){
+  pointers.delete(e.pointerId);if($('stage').hasPointerCapture(e.pointerId))$('stage').releasePointerCapture(e.pointerId);
+  if(pointers.size===1){const layout=currentLayout();drag={point:[...pointers.values()][0],panX:layout.panX,panY:layout.panY,scale:layout.scale};}
+  else{drag=null;$('stage').classList.remove('panning');}
+}
+$('stage').onpointerup=finishPan;$('stage').onpointercancel=finishPan;
+$('straighten').oninput=()=>{state.straighten=Number($('straighten').value);$('straighten-value').textContent=state.straighten.toFixed(1)+'°';schedulePreview();scheduleAutosave();};
+$('straighten').onchange=commit;
+$('straighten').ondblclick=()=>{state.straighten=0;commit();};
+
+function scheduleAutosave(){
+  clearTimeout(autosaveTimer);if(!source||!autosaveEnabled)return;
+  writeDraft(source.hash,state);$('recovery-status').textContent='Saving session on this device…';
+  autosaveTimer=setTimeout(persistSession,200);
+}
+async function persistSession(){
+  clearTimeout(autosaveTimer);if(!source||!autosaveEnabled)return;
+  const current=source,edit=structuredClone(state);writeDraft(current.hash,edit);
+  try{await saveSession(current,edit);if(source===current&&autosaveEnabled)$('recovery-status').textContent='Session saved on this device';}
+  catch{if(source===current&&autosaveEnabled)$('recovery-status').textContent='Recovery unavailable. Save edits manually.';}
+}
+async function forgetSession(){
+  autosaveEnabled=false;setRecoveryEnabled(false);$('autosave').checked=false;clearTimeout(autosaveTimer);pendingRecovery=null;$('recovery-banner').hidden=true;
+  try{await clearSession();$('recovery-status').textContent='Saved session cleared · recovery off';}
+  catch{$('recovery-status').textContent='Could not clear recovery. Check browser site storage.';}
+}
+$('autosave').checked=autosaveEnabled;
+$('autosave').onchange=async()=>{
+  autosaveEnabled=$('autosave').checked;setRecoveryEnabled(autosaveEnabled);
+  if(autosaveEnabled){$('recovery-status').textContent='Recovery ready on this device';scheduleAutosave();}
+  else await forgetSession();
+};
+$('clear-session').onclick=$('discard-session').onclick=forgetSession;
+$('resume-session').onclick=()=>{if(pendingRecovery)loadImage(pendingRecovery.file,{restored:pendingRecovery});};
+window.addEventListener('pagehide',()=>{if(source&&autosaveEnabled){writeDraft(source.hash,state);persistSession();}});
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')persistSession();});
+async function checkRecovery(){
+  try{const saved=await readSession();
+    if(loadVersion||source)return;pendingRecovery=saved;
+    if(saved&&autosaveEnabled){$('recovery-name').textContent=`${saved.file.name} · saved ${new Date(saved.savedAt).toLocaleString()}`;$('recovery-banner').hidden=false;$('recovery-status').textContent='A saved session is ready to resume';}
+    else $('recovery-status').textContent=autosaveEnabled?'Recovery ready on this device':'Local recovery is off';
+  }catch{if(!source)$('recovery-status').textContent='Recovery unavailable. Save edits manually.';}
 }
 
 async function sniff(file){
@@ -109,7 +186,7 @@ async function digest(file){
   const bytes=await crypto.subtle.digest('SHA-256',await file.arrayBuffer());
   return Array.from(new Uint8Array(bytes),b=>b.toString(16).padStart(2,'0')).join('');
 }
-async function loadImage(file){
+async function loadImage(file,{restored=null}={}){
   if(!file||exporting)return;
   const version=++loadVersion;busy(true);status('Opening image…');
   let bitmap;
@@ -119,12 +196,15 @@ async function loadImage(file){
     bitmap=await createImageBitmap(file,{imageOrientation:'from-image'});
     if(bitmap.width*bitmap.height>40_000_000||Math.max(bitmap.width,bitmap.height)>16384)throw new Error('This release supports up to 40 megapixels and 16,384 pixels on either edge.');
     const hash=await digest(file);
+    const restoredState=restored?validateState(restored.state):null;
+    if(restored&&restored.hash!==hash)throw new Error('The saved source does not match these edits. Open your original photograph.');
     if(version!==loadVersion){bitmap.close();return;}
     renderVersion++;source?.bitmap.close();source={bitmap,file,mime,hash};bitmap=null;
-    state=defaults();history=new History(state);comparing=false;exitCrop(false);
+    clearTimeout(autosaveTimer);state=restoredState||defaults();history=new History(defaults());history.push(state);comparing=false;view={mode:'fit',zoom:1,panX:0,panY:0};exitCrop(false);
+    pendingRecovery=null;$('recovery-banner').hidden=true;
     $('image-name').textContent=file.name;$('original-size').textContent=`${source.bitmap.width} × ${source.bitmap.height}`;$('file-size').textContent=(file.size/1024/1024).toFixed(2)+' MB';
     $('image-info').textContent=`${file.name} · ${source.bitmap.width} × ${source.bitmap.height}`;
-    sync();schedulePreview();
+    sync();schedulePreview();scheduleAutosave();if(restored)toast('Photograph and saved edits restored.');
   } catch(error){bitmap?.close();if(version===loadVersion){status(source?'Current image retained':'Ready');toast(error.message);}}
   finally {if(version===loadVersion)busy(false);$('file').value='';}
 }
@@ -141,8 +221,8 @@ $('demo').onclick=async()=>{
   const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/png'));if(blob)loadImage(new File([blob],'generated-landscape-demo.png',{type:'image/png'}));
 };
 
-$('undo').onclick=()=>{state=history.undo();comparing=false;sync();schedulePreview();};
-$('redo').onclick=()=>{state=history.redo();comparing=false;sync();schedulePreview();};
+$('undo').onclick=()=>{state=history.undo();comparing=false;sync();schedulePreview();scheduleAutosave();};
+$('redo').onclick=()=>{state=history.redo();comparing=false;sync();schedulePreview();scheduleAutosave();};
 $('reset').onclick=()=>{state=defaults();comparing=false;exitCrop(false);commit();};
 $('rotate').onclick=()=>{exitCrop(false);state.rotation=(state.rotation+90)%360;commit();};
 $('flip-x').onclick=()=>{exitCrop(false);state.flipX=!state.flipX;commit();};
@@ -152,9 +232,19 @@ function setComparing(value){if(!source||cropping||exporting)return;comparing=va
 $('compare').onclick=()=>setComparing(!comparing);
 let spaceHeld=false,previousCompare=false;
 document.addEventListener('keydown',e=>{
-  if(['INPUT','SELECT','TEXTAREA','BUTTON'].includes(e.target.tagName)||$('export-dialog').open)return;
+  const editingText=e.target.tagName==='TEXTAREA'||e.target.isContentEditable||(e.target.tagName==='INPUT'&&e.target.type!=='range');
+  if(editingText||$('export-dialog').open)return;
+  if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'&&!blocked&&!cropping){e.preventDefault();if(e.shiftKey)$('redo').click();else $('undo').click();return;}
+  if(['INPUT','SELECT','BUTTON'].includes(e.target.tagName))return;
   if(e.code==='Space'&&source&&!e.repeat){e.preventDefault();spaceHeld=true;previousCompare=comparing;setComparing(true);}
-  if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'&&!exporting&&!cropping){e.preventDefault();if(e.shiftKey)$('redo').click();else $('undo').click();}
+  if(source&&!blocked&&!cropping&&!e.ctrlKey&&!e.metaKey){
+    if(e.key.toLowerCase()==='j')$('clipping').click();
+    if(e.key.toLowerCase()==='f')resetView();
+    if(e.key==='1')changeZoom(1);
+    if(e.key==='+'||e.key==='='){e.preventDefault();$('zoom-in').click();}
+    if(e.key==='-'){e.preventDefault();$('zoom-out').click();}
+    if(e.target.id==='stage'&&['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)){e.preventDefault();const layout=currentLayout();view={mode:'zoom',zoom:layout.scale,panX:layout.panX+(e.key==='ArrowLeft'?40:e.key==='ArrowRight'?-40:0),panY:layout.panY+(e.key==='ArrowUp'?40:e.key==='ArrowDown'?-40:0)};sync();schedulePreview();}
+  }
   if(e.key==='Escape'&&cropping)exitCrop();
 });
 document.addEventListener('keyup',e=>{if(e.code==='Space'&&spaceHeld){e.preventDefault();spaceHeld=false;setComparing(previousCompare);}});
@@ -179,11 +269,11 @@ function finishCrop(e){if(!cropStart)return;cropStart=null;if($('crop-overlay').
 $('crop-overlay').onpointerup=finishCrop;$('crop-overlay').onpointercancel=finishCrop;
 
 function download(blob,name){const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);}
-$('save-recipe').onclick=()=>{if(!source)return;const recipe={application:'dk-pixcell',version:1,source:{name:source.file.name,sha256:source.hash,width:source.bitmap.width,height:source.bitmap.height},state:structuredClone(state)};download(new Blob([JSON.stringify(recipe,null,2)],{type:'application/json'}),basename(source.file.name)+'.pixcell.json');toast('Edit recipe saved. Keep it with the original photograph.');};
+$('save-recipe').onclick=()=>{if(!source)return;const recipe={application:'dk-pixcell',version:2,source:{name:source.file.name,sha256:source.hash,width:source.bitmap.width,height:source.bitmap.height},state:structuredClone(state)};download(new Blob([JSON.stringify(recipe,null,2)],{type:'application/json'}),basename(source.file.name)+'.pixcell.json');toast('Edit recipe saved. Keep it with the original photograph.');};
 $('load-recipe').onclick=()=>$('recipe-file').click();
 $('recipe-file').onchange=async()=>{
   const file=$('recipe-file').files[0];const currentSource=source;
-  try{if(!file||!source)return;if(file.size>65536)throw new Error('That edit recipe is too large.');const recipe=JSON.parse(await file.text());if(source!==currentSource)throw new Error('The image changed. Load the recipe again.');if(recipe.application!=='dk-pixcell'||recipe.version!==1)throw new Error('This is not a supported Pixcell recipe.');if(recipe.source?.sha256!==source.hash||recipe.source.width!==source.bitmap.width||recipe.source.height!==source.bitmap.height)throw new Error('Open the exact original photograph used to save these edits first.');state=validateState(recipe.state);comparing=false;exitCrop(false);commit();toast('Edit recipe loaded.');}catch(error){toast(error.message);}finally{$('recipe-file').value='';}
+  try{if(!file||!source)return;if(file.size>65536)throw new Error('That edit recipe is too large.');const recipe=JSON.parse(await file.text());if(source!==currentSource)throw new Error('The image changed. Load the recipe again.');if(recipe.application!=='dk-pixcell'||![1,2].includes(recipe.version))throw new Error('This is not a supported Pixcell recipe.');if(recipe.source?.sha256!==source.hash||recipe.source.width!==source.bitmap.width||recipe.source.height!==source.bitmap.height)throw new Error('Open the exact original photograph used to save these edits first.');state=validateState(recipe.state);comparing=false;exitCrop(false);commit();toast('Edit recipe loaded.');}catch(error){toast(error.message);}finally{$('recipe-file').value='';}
 };
 
 function exportDetails(){
@@ -197,6 +287,7 @@ $('quality').oninput=()=>$('quality-value').textContent=$('quality').value+'%';
 $('export-dialog').addEventListener('cancel',e=>{if(exporting)e.preventDefault();});
 $('export-form').onsubmit=async e=>{
   e.preventDefault();if(!source||exporting)return;
+  ++renderVersion;clearTimeout(previewTimer);
   exporting=true;busy(true);sync();$('download').disabled=true;$('close-export').disabled=true;$('export-error').textContent='';$('download').textContent='Preparing full image…';status('Exporting…');
   try {
     const edit=structuredClone(state),mime=$('export-format').value;
@@ -214,3 +305,4 @@ $('export-form').onsubmit=async e=>{
   finally{exporting=false;busy(false);sync();$('download').disabled=false;$('close-export').disabled=false;$('download').textContent='Download image';}
 };
 sync();
+checkRecovery();

@@ -18,7 +18,7 @@ export const PRESETS = {
   'Golden hour': {temperature:24, tint:5, contrast:8, shadows:12}
 };
 export const clamp = (v, min=0, max=1) => Math.min(max, Math.max(min, v));
-export const defaults = () => ({adjustments:Object.fromEntries(CONTROLS.map(c=>[c.key,0])),crop:{x:0,y:0,w:1,h:1},rotation:0,flipX:false,flipY:false});
+export const defaults = () => ({adjustments:Object.fromEntries(CONTROLS.map(c=>[c.key,0])),crop:{x:0,y:0,w:1,h:1},rotation:0,straighten:0,flipX:false,flipY:false});
 
 export function validateState(value) {
   if (!value || typeof value !== 'object') throw new Error('Invalid edit recipe.');
@@ -33,6 +33,9 @@ export function validateState(value) {
   state.crop = {x:crop.x,y:crop.y,w:crop.w,h:crop.h};
   if (![0,90,180,270].includes(value.rotation) || typeof value.flipX!=='boolean' || typeof value.flipY!=='boolean') throw new Error('Invalid image orientation.');
   state.rotation=value.rotation; state.flipX=value.flipX; state.flipY=value.flipY;
+  const angle=value.straighten===undefined?0:value.straighten;
+  if(!Number.isFinite(angle)||angle < -15||angle > 15)throw new Error('Invalid straightening angle.');
+  state.straighten=angle;
   return state;
 }
 
@@ -43,10 +46,21 @@ export function pixelCrop(width,height,crop) {
   const h=clamp(Math.round((crop.y+crop.h)*height)-y,1,height-y);
   return {x,y,w,h};
 }
-export function outputSize(width,height,state,maxEdge=0) {
+export function compositionSize(width,height,state) {
   const crop=pixelCrop(width,height,state.crop);
   const swapped=state.rotation%180!==0;
   let w=swapped?crop.h:crop.w, h=swapped?crop.w:crop.h;
+  const radians=Math.abs(state.straighten||0)*Math.PI/180;
+  if(radians){
+    // A centred rectangle of the original aspect ratio wholly inside the rotated crop.
+    const cos=Math.cos(radians),sin=Math.sin(radians);
+    const factor=Math.min(w/(w*cos+h*sin),h/(w*sin+h*cos));
+    w=Math.max(1,Math.floor(w*factor));h=Math.max(1,Math.floor(h*factor));
+  }
+  return {width:w,height:h};
+}
+export function outputSize(width,height,state,maxEdge=0) {
+  let {width:w,height:h}=compositionSize(width,height,state);
   const scale=maxEdge>0?Math.min(1,maxEdge/Math.max(w,h)):1;
   return {width:Math.max(1,Math.round(w*scale)),height:Math.max(1,Math.round(h*scale))};
 }
@@ -83,6 +97,15 @@ export function histogram(data) {
   const bins=Array.from({length:3},()=>new Array(256).fill(0));
   for(let i=0;i<data.length;i+=4)if(data[i+3])for(let c=0;c<3;c++)bins[c][data[i+c]]++;
   return bins;
+}
+export function clippingOverlay(data) {
+  let highlights=0,shadows=0;
+  for(let i=0;i<data.length;i+=4){
+    if(!data[i+3])continue;
+    if(data[i]===255||data[i+1]===255||data[i+2]===255){highlights++;data[i]=255;data[i+1]=65;data[i+2]=65;}
+    else if(data[i]===0&&data[i+1]===0&&data[i+2]===0){shadows++;data[i]=60;data[i+1]=110;data[i+2]=255;}
+  }
+  return {highlights,shadows};
 }
 export class History {
   constructor(state,limit=80){this.limit=limit;this.items=[structuredClone(state)];this.index=0;}

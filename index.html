@@ -14,7 +14,7 @@
   <input id="recipe-file" type="file" accept=".json" hidden>
   <main class="workspace">
     <aside class="tools" aria-label="Editing tools">
-      <div class="panel-heading"><span>DEVELOP</span><span class="version">v0.1</span></div>
+      <div class="panel-heading"><span>DEVELOP</span><span class="version">v0.2</span></div>
       <fieldset id="edit-controls" disabled>
         <section><h2>Looks</h2><div id="presets" class="presets"></div><p class="hint">A starting point. Fine-tune below.</p></section>
         <section><h2>Light</h2><div id="light-controls"></div></section>
@@ -22,22 +22,25 @@
         <section><div class="section-title"><h2>Composition</h2><button id="clear-crop" class="text-button">Reset crop</button></div>
           <div class="button-row"><button id="crop-toggle">Crop</button><button id="rotate" aria-label="Rotate clockwise 90 degrees">↻ Rotate</button></div>
           <div class="button-row"><button id="flip-x">Flip horizontal</button><button id="flip-y">Flip vertical</button></div>
+          <div class="control straighten-control"><div class="control-heading"><label for="straighten">Straighten</label><output id="straighten-value" for="straighten">0.0°</output></div><input id="straighten" type="range" min="-15" max="15" step="0.1" value="0"><p class="hint">Edges are trimmed automatically.</p></div>
         </section>
         <section><h2>Edit recipe</h2><p class="hint">Keep the original and a small file of your edits to resume later.</p><div class="button-row"><button id="save-recipe">Save edits</button><button id="load-recipe">Load edits</button></div></section>
         <button id="reset" class="reset-button">Reset all edits</button>
       </fieldset>
+      <section class="recovery-panel"><h2>Session recovery</h2><label class="checkbox-label"><input id="autosave" type="checkbox" checked> Recover edits on this device</label><p id="recovery-status" class="hint" role="status" aria-live="polite">Checking saved session…</p><button id="clear-session" class="text-button">Clear saved session</button></section>
     </aside>
     <section class="editor" aria-label="Image preview">
-      <div class="toolbar"><div class="button-row"><button id="undo" disabled aria-label="Undo edit (Ctrl or Command Z)">↶ Undo</button><button id="redo" disabled aria-label="Redo edit">↷ Redo</button></div><div class="button-row"><button id="compare" disabled aria-pressed="false">Before / after</button><span class="preview-label">Preview · fit</span></div></div>
+      <div class="toolbar"><div class="button-row"><button id="undo" disabled aria-label="Undo edit (Ctrl or Command Z)">↶ Undo</button><button id="redo" disabled aria-label="Redo edit">↷ Redo</button></div><div class="button-row"><button id="compare" disabled aria-pressed="false">Before / after</button><button id="clipping" disabled aria-pressed="false" title="Red: a channel at 255. Blue: all channels at zero. Indicators are never exported.">Clipping</button></div></div>
+      <div class="view-toolbar"><div class="button-row"><button id="fit" disabled aria-pressed="true">Fit</button><button id="actual-size" disabled aria-pressed="false">100%</button><button id="zoom-out" disabled aria-label="Zoom out">−</button><label class="zoom-label" for="zoom">Zoom <select id="zoom" disabled><option value="fit">Fit</option><option value="0.25">25%</option><option value="0.5">50%</option><option value="1">100%</option><option value="2">200%</option><option value="4">400%</option><option id="custom-zoom" value="custom" hidden>Custom</option></select></label><button id="zoom-in" disabled aria-label="Zoom in">+</button></div><span id="view-hint">Drag to pan · scroll or pinch to zoom</span></div>
       <div id="crop-tools" class="crop-toolbar" hidden><label>Aspect ratio <select id="aspect"><option value="0">Free</option><option value="1">1 : 1</option><option value="1.5">3 : 2</option><option value="1.333333333">4 : 3</option><option value="1.777777778">16 : 9</option><option value="0.666666667">2 : 3</option></select></label><span>Drag to select · original orientation</span><button id="crop-apply" class="primary">Apply crop</button><button id="crop-cancel">Cancel</button></div>
-      <div id="stage" class="stage">
-        <div id="welcome" class="welcome"><div class="welcome-icon">◈</div><p class="eyebrow">YOUR LIGHT. YOUR VISION.</p><h1>Make the photograph<br>you had in mind.</h1><p>Bring out the detail. Find the colour.<br>Keep every edit reversible.</p><button id="welcome-open" class="primary">Open a photograph</button><button id="demo" class="text-button">Try a generated demo →</button><p class="formats">JPEG · PNG · WebP<br><small>DNG and camera RAW planned for a future release</small></p></div>
-        <div id="canvas-wrap" class="canvas-wrap" hidden><canvas id="preview" aria-label="Edited image preview"></canvas><div id="crop-overlay" class="crop-overlay" hidden><div id="crop-selection" class="crop-selection"></div></div><span id="before-label" class="image-badge" hidden>ORIGINAL</span></div>
+      <div id="stage" class="stage" tabindex="0" aria-label="Image viewport. Drag to pan, scroll or pinch to zoom. Arrow keys pan. Press J for clipping indicators.">
+        <div id="welcome" class="welcome"><div class="welcome-icon">◈</div><p class="eyebrow">YOUR LIGHT. YOUR VISION.</p><h1>Make the photograph<br>you had in mind.</h1><p>Bring out the detail. Find the colour.<br>Keep every edit reversible.</p><div id="recovery-banner" class="recovery-banner" hidden><p id="recovery-name"></p><button id="resume-session" class="primary">Resume last session</button><button id="discard-session" class="text-button">Discard saved session</button></div><button id="welcome-open" class="primary">Open a photograph</button><button id="demo" class="text-button">Try a generated demo →</button><p class="formats">JPEG · PNG · WebP<br><small>DNG and camera RAW planned for a future release</small></p></div>
+        <div id="canvas-wrap" class="canvas-wrap" hidden><canvas id="preview" aria-label="Edited image preview"></canvas><div id="crop-overlay" class="crop-overlay" hidden><div id="crop-selection" class="crop-selection"></div></div></div><span id="before-label" class="image-badge" hidden>ORIGINAL</span>
       </div>
       <footer class="image-status"><span id="image-info">Drop an image anywhere to begin</span><span id="status" role="status" aria-live="polite">Ready</span></footer>
     </section>
     <aside class="inspector" aria-label="Image information">
-      <section><p class="eyebrow">HISTOGRAM</p><canvas id="histogram" width="480" height="220" aria-label="RGB histogram of current preview"></canvas><div class="histogram-ends"><span>Shadows</span><span>Highlights</span></div></section>
+      <section><p id="histogram-title" class="eyebrow">HISTOGRAM</p><canvas id="histogram" width="480" height="220" aria-label="RGB histogram of current preview"></canvas><div class="histogram-ends"><span>Shadows</span><span>Highlights</span></div><p id="clipping-info" class="hint" hidden><span class="shadow-dot">●</span> Shadows · <span class="highlight-dot">●</span> Highlights</p></section>
       <section><p class="eyebrow">IMAGE DETAILS</p><h2 id="image-name">No image open</h2><dl><dt>Original</dt><dd id="original-size">—</dd><dt>Edited</dt><dd id="edited-size">—</dd><dt>File size</dt><dd id="file-size">—</dd><dt>Colour</dt><dd>Browser SDR</dd></dl></section>
       <section class="note"><span class="note-icon">✦</span><h2>Space to experiment.</h2><p>Edits never overwrite your source. Export a new image whenever you’re ready.</p></section>
       <section><p class="eyebrow">QUICK KEYS</p><dl><dt>Undo</dt><dd>⌘ / Ctrl Z</dd><dt>Redo</dt><dd>⇧ ⌘ / Ctrl Z</dd><dt>Compare</dt><dd>Hold Space</dd></dl></section>
