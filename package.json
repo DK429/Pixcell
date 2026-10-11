@@ -5,6 +5,7 @@
   "type": "module",
   "description": "A local-first, non-destructive browser photo editor",
   "scripts": {
+    "build:demo": "node scripts/build-demo.mjs",
     "start": "node scripts/serve.mjs",
     "test": "node --test tests/*.test.mjs",
     "check": "node --check src/app.js && node --check src/engine.js && node --check src/worker.js"

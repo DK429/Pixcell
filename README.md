@@ -39,7 +39,15 @@ npm start
 
 GitHub Actions checks JavaScript syntax and runs the engine tests on pushes and pull requests.
 
-For optional GitHub Pages hosting, in the repository's **Settings → Pages**, choose **Deploy from a branch**, `main`, and `/ (root)`. The app is static and uses relative asset paths. Repository visibility and account plan determine Pages availability. Any static HTTPS host can also serve these files. Hosting has not been enabled by this source commit.
+### Live demo on GitHub Pages
+
+The **Deploy Pixcell demo** workflow builds and publishes the application on pushes to `main`. It checks syntax and the engine tests before publishing. Only the HTML, stylesheet and three runtime JavaScript modules are included in the deployment artifact.
+
+One-time setup: open [Settings → Pages](https://github.com/DK429/Pixcell/settings/pages), then under **Build and deployment → Source** select **GitHub Actions**. The connected coding app cannot modify this repository setting. Private repositories require GitHub Pro or another plan supporting private-repository Pages; the repository does not need to be made public on an eligible plan. The demo itself is publicly accessible and its browser assets are downloadable.
+
+After enabling Pages, open [Actions → Deploy Pixcell demo](https://github.com/DK429/Pixcell/actions/workflows/pages.yml) and run the workflow on `main`, or re-run a deployment that failed because Pages was not enabled. Use the actual deployment URL shown in Pages settings or the completed workflow; the usual project URL is `https://dk429.github.io/Pixcell/` when no custom domain is configured.
+
+For another static HTTPS host, run `npm run build:demo` and upload the contents of `_site/`. Relative asset paths support hosting the app under a project subdirectory.
 
 Do not publish private photographs as repository files. The app opens files chosen from a visitor's own device. This source has no analytics, remote fonts or image upload API.
 
