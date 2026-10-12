@@ -26,7 +26,7 @@ function status(message){$('status').textContent=message;}
 function basename(name){return name.replace(/\.[^.]+$/,'');}
 function busy(value){blocked=value;$('edit-controls').disabled=value||!source;$('export').disabled=value||!source;$('open').disabled=value;$('welcome-open').disabled=value;$('demo').disabled=value;$('resume-session').disabled=value;$('file').disabled=value;sync();}
 function sync(){
-  for(const c of CONTROLS){$('control-'+c.key).value=state.adjustments[c.key];$('value-'+c.key).textContent=formatControl(c,state.adjustments[c.key]);}
+  for(const c of CONTROLS){$('control-'+c.key).value=state.adjustments[c.key];$('value-'+c.key).value=numberText(c,state.adjustments[c.key]);}
   $('undo').disabled=!source||!history.canUndo||blocked||cropping;
   $('redo').disabled=!source||!history.canRedo||blocked||cropping;
   $('compare').disabled=!source||cropping||blocked;
@@ -34,7 +34,7 @@ function sync(){
   $('crop-toggle').setAttribute('aria-pressed',String(cropping));
   $('flip-x').setAttribute('aria-pressed',String(state.flipX));
   $('flip-y').setAttribute('aria-pressed',String(state.flipY));
-  $('straighten').value=state.straighten;$('straighten-value').textContent=state.straighten.toFixed(1)+'°';$('straighten').disabled=cropping;
+  $('straighten').value=state.straighten;$('straighten-value').value=state.straighten.toFixed(1);$('straighten').disabled=cropping;$('straighten-value').disabled=cropping;$('reset-straighten').disabled=cropping;
   for(const id of ['fit','actual-size','zoom','zoom-in','zoom-out','clipping'])$(id).disabled=!source||blocked||cropping;
   $('fit').setAttribute('aria-pressed',String(view.mode==='fit'));
   $('actual-size').setAttribute('aria-pressed',String(view.mode==='zoom'&&view.zoom===1));
@@ -46,19 +46,43 @@ function sync(){
   if(source){const size=outputSize(source.bitmap.width,source.bitmap.height,state);$('edited-size').textContent=`${size.width} × ${size.height}`;}
 }
 function commit(){history.push(state);sync();schedulePreview();scheduleAutosave();}
-function formatControl(c,v){return (v>0?'+':'')+(c.key==='exposure'?Number(v).toFixed(2):v)+(c.unit||'');}
+function numberText(c,value){return Number(value).toFixed((String(c.step).split('.')[1]||'').length);}
+function addPrecisionControl(heading,c,getValue,setValue){
+  const group=document.createElement('div');group.className='control-value';
+  const number=document.createElement('input');number.type='number';number.className='control-number';number.id=c.valueId;
+  number.min=c.min;number.max=c.max;number.step=c.step;number.value=numberText(c,getValue());
+  number.setAttribute('aria-label',`${c.label} exact value${c.unit||''}`);number.title='Enter a value, then press Enter or leave the field to apply';
+  number.onfocus=()=>number.select();
+  number.onchange=()=>{
+    const value=number.valueAsNumber;
+    if(!Number.isFinite(value)){number.value=numberText(c,getValue());return;}
+    const next=Number(numberText(c,Math.round(clamp(value,c.min,c.max)/c.step)*c.step));
+    number.value=numberText(c,next);if(next===getValue())return;setValue(next);commit();
+  };
+  number.onkeydown=e=>{
+    if(e.key==='Enter'){e.preventDefault();number.blur();}
+    if(e.key==='Escape'){e.preventDefault();number.value=numberText(c,getValue());number.blur();}
+  };
+  const reset=document.createElement('button');reset.type='button';reset.className='control-zero';reset.id=c.resetId;reset.textContent='↺';
+  reset.title=`Reset ${c.label.toLowerCase()} to zero`;reset.setAttribute('aria-label',reset.title);
+  reset.onclick=()=>{if(getValue()===0)return;setValue(0);commit();};
+  group.append(number);
+  if(c.unit){const unit=document.createElement('span');unit.className='control-unit';unit.textContent=c.unit.trim();group.append(unit);}
+  group.append(reset);heading.append(group);
+}
 
 for(const [index,c] of CONTROLS.entries()){
   const row=document.createElement('div');row.className='control';
   const heading=document.createElement('div');heading.className='control-heading';
   const label=document.createElement('label');label.htmlFor='control-'+c.key;label.textContent=c.label;
-  const value=document.createElement('output');value.id='value-'+c.key;value.htmlFor=label.htmlFor;
   const input=document.createElement('input');input.type='range';input.id=label.htmlFor;input.min=c.min;input.max=c.max;input.step=c.step;input.value=0;
-  input.oninput=()=>{state.adjustments[c.key]=Number(input.value);value.textContent=formatControl(c,Number(input.value));schedulePreview();scheduleAutosave();};
+  input.oninput=()=>{state.adjustments[c.key]=Number(input.value);$('value-'+c.key).value=numberText(c,Number(input.value));schedulePreview();scheduleAutosave();};
   input.onchange=commit;
   input.ondblclick=()=>{state.adjustments[c.key]=0;commit();};
-  heading.append(label,value);row.append(heading,input);$(index<6?'light-controls':'colour-controls').append(row);
+  heading.append(label);addPrecisionControl(heading,{...c,valueId:'value-'+c.key,resetId:'reset-'+c.key},()=>state.adjustments[c.key],value=>state.adjustments[c.key]=value);
+  row.append(heading,input);$(index<6?'light-controls':'colour-controls').append(row);
 }
+addPrecisionControl($('straighten').previousElementSibling,{label:'Straighten',min:-15,max:15,step:.1,unit:'°',valueId:'straighten-value',resetId:'reset-straighten'},()=>state.straighten,value=>state.straighten=value);
 for(const [name,adjustments] of Object.entries(PRESETS)){
   const button=document.createElement('button');button.textContent=name;
   button.onclick=()=>{state.adjustments={...defaults().adjustments,...adjustments};commit();};$('presets').append(button);
@@ -135,7 +159,7 @@ function finishPan(e){
   else{drag=null;$('stage').classList.remove('panning');}
 }
 $('stage').onpointerup=finishPan;$('stage').onpointercancel=finishPan;
-$('straighten').oninput=()=>{state.straighten=Number($('straighten').value);$('straighten-value').textContent=state.straighten.toFixed(1)+'°';schedulePreview();scheduleAutosave();};
+$('straighten').oninput=()=>{state.straighten=Number($('straighten').value);$('straighten-value').value=state.straighten.toFixed(1);schedulePreview();scheduleAutosave();};
 $('straighten').onchange=commit;
 $('straighten').ondblclick=()=>{state.straighten=0;commit();};
 

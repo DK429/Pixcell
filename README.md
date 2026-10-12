@@ -1,6 +1,6 @@
 # Pixcell
 
-A non-destructive browser photo editor for DK. Version **0.2.0** adds image inspection, straightening and local session recovery to the foundation for a larger photography app.
+A non-destructive browser photo editor for DK. Version **0.2.1** adds exact numeric adjustment entry and individual zero resets to image inspection, straightening and local session recovery.
 
 ## Run
 
@@ -18,6 +18,7 @@ Open http://localhost:4173. Use `npm test` for engine tests and `npm run check` 
 
 - Open JPEG, PNG and WebP; file signatures are checked before decoding.
 - Exposure in linear light; contrast, highlights, shadows, whites, blacks, warmth, tint, saturation and vibrance.
+- Enter exact values beside every Light, Colour and Straighten slider. Press Enter or leave the field to apply; Escape cancels a pending entry. Values stay within the slider's range and step (exposure: 0.05 EV; other adjustments: 1; straightening: 0.1°). The ↺ button resets just that adjustment to exactly zero; both entry and resets support undo/redo.
 - Five adjustable looks, RGB histogram, comparison with original colours at the same composition.
 - Drag crop selection with free or fixed ratios; rotate by 90° and flip.
 - Straighten by up to 15° in either direction, with automatic edge trimming. Undo/reset restores the original composition; exports use the same geometry as the preview.
