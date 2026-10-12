@@ -10,3 +10,5 @@
 .control-heading{gap:6px;flex-wrap:wrap}.control-value{display:flex;align-items:center;gap:5px;min-width:0}.control-value input.control-number{width:65px;padding:6px 5px;font-size:12px;font-variant-numeric:tabular-nums;text-align:right;height:32px}.control-unit{color:var(--muted);font-size:10px}.control-zero{width:32px;height:32px;padding:0;font-size:18px;color:var(--accent);flex:none}.control-number::-webkit-inner-spin-button{opacity:1}
 #enable-sharpen{width:100%;margin:12px 0}#sharpen-status{margin-bottom:12px}
 @media(max-width:700px){.control-heading>label{flex-basis:100%}.control-value{width:100%}.control-value input.control-number{flex:1;width:0;height:40px;font-size:14px}.control-zero{width:40px;height:40px}.control{margin-bottom:18px}}
+
+.sharpening-toggle{margin:12px 0}.sharpening-toggle input{flex:none}#sharpen-legend{margin-bottom:14px}

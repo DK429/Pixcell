@@ -1,12 +1,12 @@
 # Pixcell
 
-A non-destructive browser photo editor for DK. Version **0.3.1** strengthens the sharpening response and adds explicit on/off feedback and an Enable sharpening button. Exact adjustment entry, image inspection and local session recovery remain available.
+A non-destructive browser photo editor for DK. Version **0.4.0** adds a live greyscale sharpening effect mask, a photograph preview toggle and staged Apply/Cancel controls.
 
 ## Run
 
 Requires Node.js 22 or newer. No package installation or build step is needed.
 
-The test suite includes 25 engine/view/detail tests and browser workflows for Chromium, Firefox and WebKit at desktop and mobile widths. Browser tests run in GitHub Actions and must pass before the live demo deploys.
+The test suite includes 29 engine/view/detail tests and browser workflows for Chromium, Firefox and WebKit at desktop and mobile widths. Browser tests run in GitHub Actions and must pass before the live demo deploys.
 
 ```sh
 npm start
@@ -19,7 +19,7 @@ Open http://localhost:4173. Use `npm test` for engine tests and `npm run check` 
 - Open JPEG, PNG and WebP; file signatures are checked before decoding.
 - Exposure in linear light; contrast, highlights, shadows, whites, blacks, warmth, tint, saturation and vibrance.
 - Enter exact values beside every Light, Colour and Straighten slider. Press Enter or leave the field to apply; Escape cancels a pending entry. Values stay within the slider's range and step (exposure: 0.05 EV; other adjustments: 1; straightening: 0.1°). The ↺ button resets just that adjustment to exactly zero; both entry and resets support undo/redo.
-- Advanced sharpening with Amount, Fine / Medium / Coarse detail gains, Noise protection and Halo allowance. Amount starts at zero; raise it to enable. Controls use exact numeric entry, reset to their starting values, undo/redo, recipes and recovery.
+- Advanced sharpening with Amount, Fine / Medium / Coarse detail gains, Noise protection and Halo allowance. Amount starts at zero; raise it to enable. Sharpening opens with a greyscale effect mask; toggle it off to inspect the photograph. Sliders and numeric entry stage changes; Apply commits one undoable edit, Cancel discards the preview. Recipes, recovery and exports contain applied settings only.
 - Five adjustable looks, RGB histogram, comparison with original colours at the same composition.
 - Drag crop selection with free or fixed ratios; rotate by 90° and flip.
 - Straighten by up to 15° in either direction, with automatic edge trimming. Undo/reset restores the original composition; exports use the same geometry as the preview.
@@ -35,7 +35,11 @@ Open http://localhost:4173. Use `npm test` for engine tests and `npm run check` 
 
 ### Advanced sharpening
 
-Click **Enable sharpening** or start with **Amount 100**, the default scale gains (80 / 110 / 60), **Noise protection 100** and **Halo allowance 0**. Inspect at **100%**, particularly skies, shadow areas and high-contrast edges. Raise noise protection for noisy images, reduce fine detail if grain becomes visible, and keep halo allowance at zero for strict local bounds. Zero amount bypasses the entire sharpening stage exactly and disables the dependent detail/noise/halo controls. The status shows whether sharpening is off or on. Reset buttons restore each detail control's starting value; Amount and Halo allowance return to zero.
+Click **Enable sharpening** to start a preview at **Amount 100**, or **Preview sharpening** to inspect settings already applied. The **Show sharpening effect mask** toggle is on by default for each opened image. Black means no final pixel change; grey/white means stronger changes. The map measures actual 8-bit pixel changes after all masks, overshoot limits and gamut handling. Its fixed display curve boosts small changes; it is not a literal opacity mask or a standalone find-edges filter. Moving sliders updates the map; uncheck the toggle to inspect the staged photograph.
+
+**Apply sharpening** commits all staged detail controls in one undoable edit and returns to the photograph. **Cancel** restores the applied settings. While previewing, **Applied / preview** compares the current applied photograph with the staged result or mask. Undo first cancels an active sharpening preview; after Apply, Undo restores the prior applied edit. Light/Colour and composition edits remain independent. Opening another source, loading a recipe, resetting all edits or choosing a look discards the temporary sharpening preview.
+
+Unapplied sharpening is excluded from exports, recipes and recovery; the export dialog and recipe-save message say so. Reloading restores applied edits only. The mask is never exported, stored in a recipe or baked into the source. Amount zero gives a black effect map and disables the dependent detail/noise/halo controls. Reset buttons restore each detail control's starting value; Amount and Halo allowance return to zero. Inspect at **100%**, particularly skies, shadows and high-contrast edges. Raise noise protection for noisy images, reduce fine detail if grain becomes visible, and keep halo allowance at zero for strict local bounds.
 
 After Light and Colour, sRGB is linearised and converted to Oklab. Only its float32 L plane is filtered; a/b are retained on reconstruction. A global, bounded-sample MAD estimate uses a high-pass kernel normalised to unit noise energy. An alpha-aware guided filter builds a denoised guide; gradient strength, structure-tensor coherence and luminosity protection form a guided-feathered mask. Three successive guided detail bands use radii 1 / 3 / 6 at native size, separate gains, noise coring and 65% gain for positive detail. A local 5×5 min/max clamp limits overshoot. Halo allowance 0–20 corresponds to 0–0.02 in Oklab L. Out-of-gamut pixels reduce the L change while retaining a/b, rather than clipping RGB independently. Quantisation can still cause small chroma differences.
 
@@ -43,7 +47,7 @@ The immutable full L plane costs four bytes per pixel (about 153 MiB at 40 MP); 
 
 Preview filter radii follow its sampling scale; exports sharpen at the selected output resolution. Native 100% gives the most reliable inspection. Fit, resized exports and zoomed viewport noise estimates can differ from a full-image render, particularly on mixed-detail scenes. This is still an 8-bit SDR input/output pipeline, not sensor RAW development or an end-to-end float colour engine. Sharpening does not recover real motion or lens blur. Deconvolution, BM3D/NLM, learned deblurring and GPU acceleration are future work.
 
-`npm run evaluate:sharpen` measures synthetic slanted-edge 10–90% rise distance and approximate MTF50, flat-patch noise, step-edge overshoot and elapsed processing time. It prints measurements rather than an image-quality certification; camera images, measured lens targets and device-specific memory/responsiveness benchmarks are still needed. Unit tests additionally check exact bypass, chroma, alpha, legacy recipes and tile boundaries; browser checks cover sharpened PNG pixels, comparison, numeric/reset/undo behaviour, recipes and recovery.
+`npm run evaluate:sharpen` measures synthetic slanted-edge 10–90% rise distance and approximate MTF50, flat-patch noise, step-edge overshoot and elapsed processing time. It prints measurements rather than an image-quality certification; camera images, measured lens targets and device-specific memory/responsiveness benchmarks are still needed. Unit tests additionally check exact bypass, chroma, alpha, legacy recipes and tile boundaries; browser checks cover default greyscale mask updates, photo toggle, staged Apply/Cancel, applied comparison, one-step undo, clean PNG exports, recipes/recovery and worker fallback.
 
 Algorithm references: [Guided Image Filtering (He, Sun & Tang)](https://kaiminghe.github.io/publications/eccv10guidedfilter.pdf) and [Oklab (Ottosson)](https://bottosson.github.io/posts/oklab/).
 
@@ -107,7 +111,7 @@ Do not publish private photographs as repository files. The app opens files chos
 
 ## Architecture
 
-`src/engine.js` contains pixel adjustments, composition sizing, clipping, state validation and history. `src/sharpen.js` contains the tiled Oklab sharpening pipeline. `src/geometry.js` samples crop/orientation/straightening for preview and export. `src/view.js` handles viewport sizing and zoom anchors. `src/recovery.js` manages the local source, edit state and lightweight draft. `src/worker.js` processes transferred pixel buffers. `src/app.js` connects import, controls, inspection and export. Everything runs on the device.
+`src/engine.js` contains pixel adjustments, composition sizing, clipping, state validation and history. `src/sharpen.js` contains the tiled Oklab sharpening pipeline and actual-effect visualization. `src/sharpen-state.js` keeps temporary sharpening separate from applied edits. `src/geometry.js` samples crop/orientation/straightening for preview and export. `src/view.js` handles viewport sizing and zoom anchors. `src/recovery.js` manages the local source, edit state and lightweight draft. `src/worker.js` processes transferred pixel buffers. `src/app.js` connects import, controls, inspection and export. Everything runs on the device.
 
 Read [ROADMAP.md](ROADMAP.md) for the stages required for a competitive editor. The current source uses platform APIs and has no third-party runtime dependencies.
 

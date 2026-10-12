@@ -1,9 +1,12 @@
-import {CONTROLS,PRESETS,defaults,validateState,compositionSize,outputSize,processPixels,histogram,clippingOverlay,History,clamp} from './engine.js';
-import {geometry} from './geometry.js';
-import {viewLayout,zoomAt} from './view.js';
-import {recoveryEnabled,setRecoveryEnabled,writeDraft,saveSession,readSession,clearSession} from './recovery.js';
+import {CONTROLS,PRESETS,defaults,validateState,compositionSize,outputSize,processPixels,histogram,clippingOverlay,History,clamp} from './engine.js?v=0.4.0';
+import {geometry} from './geometry.js?v=0.4.0';
+import {effectMaskPixels} from './sharpen.js?v=0.4.0';
+import {SharpenSession} from './sharpen-state.js?v=0.4.0';
+import {viewLayout,zoomAt} from './view.js?v=0.4.0';
+import {recoveryEnabled,setRecoveryEnabled,writeDraft,saveSession,readSession,clearSession} from './recovery.js?v=0.4.0';
 
 const $=id=>document.getElementById(id);
+const sharpening=new SharpenSession();
 let source=null, state=defaults(), history=new History(state), comparing=false, cropping=false;
 let draftCrop=null, renderVersion=0, loadVersion=0, previewTimer, toastTimer, exporting=false;
 let blocked=false,showClipping=false,view={mode:'fit',zoom:1,panX:0,panY:0};
@@ -12,13 +15,13 @@ let worker=null, jobId=0;
 let previewProcessing=false,previewPending=false;
 const jobs=new Map();
 try {
-  worker=new Worker(new URL('./worker.js',import.meta.url),{type:'module'});
+  worker=new Worker(new URL('./worker.js?v=0.4.0',import.meta.url),{type:'module'});
   worker.onmessage=({data})=>{const job=jobs.get(data.id);if(!job)return;jobs.delete(data.id);data.error?job.reject(new Error(data.error)):job.resolve({data:new Uint8ClampedArray(data.pixels),bins:data.bins});};
   worker.onerror=()=>{worker?.terminate();worker=null;for(const job of jobs.values())job.reject(new Error('Image processing interrupted. Please try again.'));jobs.clear();};
 } catch {worker=null;}
 
 function process(data,adjustments,width,height,options={}){
-  if(!worker){processPixels(data,adjustments,width,height,options);return Promise.resolve({data,bins:histogram(data)});}
+  if(!worker){const effectMap=options.showMask?new Float32Array(width*height):null;processPixels(data,adjustments,width,height,{...options,effectMap});const bins=histogram(data);return Promise.resolve({data:effectMap?effectMaskPixels(effectMap):data,bins});}
   const id=++jobId;
   return new Promise((resolve,reject)=>{jobs.set(id,{resolve,reject});try{worker.postMessage({id,pixels:data.buffer,adjustments,width,height,options},[data.buffer]);}catch(error){jobs.delete(id);reject(error);}});
 }
@@ -27,12 +30,12 @@ function status(message){$('status').textContent=message;}
 function basename(name){return name.replace(/\.[^.]+$/,'');}
 function busy(value){blocked=value;$('edit-controls').disabled=value||!source;$('export').disabled=value||!source;$('open').disabled=value;$('welcome-open').disabled=value;$('demo').disabled=value;$('resume-session').disabled=value;$('file').disabled=value;sync();}
 function sync(){
-  for(const c of CONTROLS){$('control-'+c.key).value=state.adjustments[c.key];$('value-'+c.key).value=numberText(c,state.adjustments[c.key]);}
+  for(const c of CONTROLS){const value=c.group==='detail'?sharpening.value(c.key,state.adjustments):state.adjustments[c.key];$('control-'+c.key).value=value;$('value-'+c.key).value=numberText(c,value);}
   syncSharpen();
-  $('undo').disabled=!source||!history.canUndo||blocked||cropping;
-  $('redo').disabled=!source||!history.canRedo||blocked||cropping;
+  $('undo').disabled=!source||(!history.canUndo&&!sharpening.active)||blocked||cropping;
+  $('redo').disabled=!source||!history.canRedo||sharpening.active||blocked||cropping;
   $('compare').disabled=!source||cropping||blocked;
-  $('compare').setAttribute('aria-pressed',String(comparing));
+  $('compare').setAttribute('aria-pressed',String(comparing));$('compare').textContent=sharpening.active?'Applied / preview':'Before / after';
   $('crop-toggle').setAttribute('aria-pressed',String(cropping));
   $('flip-x').setAttribute('aria-pressed',String(state.flipX));
   $('flip-y').setAttribute('aria-pressed',String(state.flipY));
@@ -40,34 +43,44 @@ function sync(){
   for(const id of ['fit','actual-size','zoom','zoom-in','zoom-out','clipping'])$(id).disabled=!source||blocked||cropping;
   $('fit').setAttribute('aria-pressed',String(view.mode==='fit'));
   $('actual-size').setAttribute('aria-pressed',String(view.mode==='zoom'&&view.zoom===1));
-  $('clipping').setAttribute('aria-pressed',String(showClipping));$('clipping-info').hidden=!showClipping;
+  const mask=sharpening.active&&sharpening.showMask&&!comparing&&!cropping;
+  $('clipping').disabled=$('clipping').disabled||mask;
+  $('clipping').setAttribute('aria-pressed',String(showClipping));$('clipping-info').hidden=!showClipping||mask;
   if(view.mode==='fit')$('zoom').value='fit';
   else if([.25,.5,1,2,4].includes(view.zoom))$('zoom').value=String(view.zoom);
   else{$('custom-zoom').textContent=Math.round(view.zoom*100)+'%';$('custom-zoom').hidden=false;$('zoom').value='custom';}
-  $('view-hint').textContent=showClipping?'Clipping: blue shadows · red highlights':'Drag to pan · scroll or pinch to zoom';
+  $('view-hint').textContent=mask?'Sharpening effect mask · not exported':showClipping?'Clipping: blue shadows · red highlights':'Drag to pan · scroll or pinch to zoom';
   if(source){const size=outputSize(source.bitmap.width,source.bitmap.height,state);$('edited-size').textContent=`${size.width} × ${size.height}`;}
 }
 function syncSharpen(){
-  const off=state.adjustments.sharpenAmount===0;
-  $('enable-sharpen').hidden=!off;
-  $('sharpen-status').textContent=off?'Off · Enable sharpening or raise Amount.':'On · Amount '+state.adjustments.sharpenAmount+' · inspect at 100%';
-  for(const c of CONTROLS.filter(c=>c.group==='detail'&&c.key!=='sharpenAmount')){
-    for(const prefix of ['control-','value-','reset-'])$(prefix+c.key).disabled=off;
+  const off=sharpening.value('sharpenAmount',state.adjustments)===0,dirty=sharpening.dirty(state.adjustments);
+  $('enable-sharpen').hidden=sharpening.active;
+  $('enable-sharpen').textContent=off?'Enable sharpening':'Preview sharpening';
+  $('sharpen-status').textContent=sharpening.active?(dirty?'Unapplied sharpening preview · Apply or Cancel.':'Previewing applied settings.'):(off?'Off · Enable sharpening or raise Amount.':'Applied · Amount '+state.adjustments.sharpenAmount);
+  $('sharpen-mask').checked=sharpening.showMask;
+  $('apply-sharpen').disabled=!dirty||blocked||cropping;
+  $('cancel-sharpen').disabled=!sharpening.active||blocked;
+  $('sharpen-mask').disabled=blocked||cropping;
+  $('sharpen-legend').hidden=!sharpening.active||!sharpening.showMask||comparing||cropping;
+  for(const c of CONTROLS.filter(c=>c.group==='detail')){
+    for(const prefix of ['control-','value-','reset-'])$(prefix+c.key).disabled=cropping||(off&&c.key!=='sharpenAmount');
   }
 }
+function stageSharpen(){comparing=false;sync();schedulePreview();}
+function cancelSharpen(){sharpening.cancel();comparing=false;sync();schedulePreview();}
 function commit(){history.push(state);sync();schedulePreview();scheduleAutosave();}
 function numberText(c,value){return Number(value).toFixed((String(c.step).split('.')[1]||'').length);}
-function addPrecisionControl(heading,c,getValue,setValue){
+function addPrecisionControl(heading,c,getValue,setValue,onEdit=commit){
   const group=document.createElement('div');group.className='control-value';
   const number=document.createElement('input');number.type='number';number.className='control-number';number.id=c.valueId;
   number.min=c.min;number.max=c.max;number.step=c.step;number.value=numberText(c,getValue());
-  number.setAttribute('aria-label',`${c.label} exact value${c.unit||''}`);number.title='Enter a value, then press Enter or leave the field to apply';
+  number.setAttribute('aria-label',`${c.label} exact value${c.unit||''}`);number.title=c.group==='detail'?'Enter a value to preview; Apply sharpening commits the changes':'Enter a value, then press Enter or leave the field to apply';
   number.onfocus=()=>number.select();
   number.onchange=()=>{
     const value=number.valueAsNumber;
     if(!Number.isFinite(value)){number.value=numberText(c,getValue());return;}
     const next=Number(numberText(c,Math.round(clamp(value,c.min,c.max)/c.step)*c.step));
-    number.value=numberText(c,next);if(next===getValue())return;setValue(next);commit();
+    number.value=numberText(c,next);if(next===getValue())return;setValue(next);onEdit();
   };
   number.onkeydown=e=>{
     if(e.key==='Enter'){e.preventDefault();number.blur();}
@@ -75,7 +88,7 @@ function addPrecisionControl(heading,c,getValue,setValue){
   };
   const reset=document.createElement('button');reset.type='button';reset.className='control-zero';reset.id=c.resetId;reset.textContent='↺';
   reset.title=`Reset ${c.label.toLowerCase()} to ${c.default??0}`;reset.setAttribute('aria-label',reset.title);
-  reset.onclick=()=>{if(getValue()===(c.default??0))return;setValue(c.default??0);commit();};
+  reset.onclick=()=>{if(getValue()===(c.default??0))return;setValue(c.default??0);onEdit();};
   group.append(number);
   if(c.unit){const unit=document.createElement('span');unit.className='control-unit';unit.textContent=c.unit.trim();group.append(unit);}
   group.append(reset);heading.append(group);
@@ -86,20 +99,26 @@ for(const [index,c] of CONTROLS.entries()){
   const heading=document.createElement('div');heading.className='control-heading';
   const label=document.createElement('label');label.htmlFor='control-'+c.key;label.textContent=c.label;
   const input=document.createElement('input');input.type='range';input.id=label.htmlFor;input.min=c.min;input.max=c.max;input.step=c.step;input.value=c.default??0;
-  input.oninput=()=>{state.adjustments[c.key]=Number(input.value);$('value-'+c.key).value=numberText(c,Number(input.value));syncSharpen();schedulePreview();scheduleAutosave();};
-  input.onchange=commit;
-  input.ondblclick=()=>{state.adjustments[c.key]=c.default??0;commit();};
-  heading.append(label);addPrecisionControl(heading,{...c,valueId:'value-'+c.key,resetId:'reset-'+c.key},()=>state.adjustments[c.key],value=>state.adjustments[c.key]=value);
+  const get=()=>c.group==='detail'?sharpening.value(c.key,state.adjustments):state.adjustments[c.key];
+  const set=value=>{if(c.group==='detail')sharpening.set(c.key,value,state.adjustments);else state.adjustments[c.key]=value;};
+  const onEdit=c.group==='detail'?stageSharpen:commit;
+  input.oninput=()=>{set(Number(input.value));$('value-'+c.key).value=numberText(c,Number(input.value));if(c.group==='detail')stageSharpen();else{schedulePreview();scheduleAutosave();}};
+  input.onchange=onEdit;
+  input.ondblclick=()=>{set(c.default??0);onEdit();};
+  heading.append(label);addPrecisionControl(heading,{...c,valueId:'value-'+c.key,resetId:'reset-'+c.key},get,set,onEdit);
   row.append(heading,input);$(c.group==='detail'?'detail-controls':index<6?'light-controls':'colour-controls').append(row);
 }
-$('enable-sharpen').onclick=()=>{state.adjustments.sharpenAmount=100;commit();};
+$('enable-sharpen').onclick=()=>{sharpening.begin(state.adjustments);if(sharpening.value('sharpenAmount',state.adjustments)===0)sharpening.set('sharpenAmount',100,state.adjustments);stageSharpen();};
+$('sharpen-mask').onchange=()=>{sharpening.showMask=$('sharpen-mask').checked;sharpening.begin(state.adjustments);stageSharpen();};
+$('apply-sharpen').onclick=()=>{if(sharpening.apply(state.adjustments)){comparing=false;commit();}};
+$('cancel-sharpen').onclick=cancelSharpen;
 addPrecisionControl($('straighten').previousElementSibling,{label:'Straighten',min:-15,max:15,step:.1,unit:'°',valueId:'straighten-value',resetId:'reset-straighten'},()=>state.straighten,value=>state.straighten=value);
 for(const [name,adjustments] of Object.entries(PRESETS)){
   const button=document.createElement('button');button.textContent=name;
-  button.onclick=()=>{state.adjustments={...defaults().adjustments,...adjustments};commit();};$('presets').append(button);
+  button.onclick=()=>{sharpening.cancel();state.adjustments={...defaults().adjustments,...adjustments};commit();};$('presets').append(button);
 }
 
-function previewEdit(){const edit=structuredClone(state);if(cropping){edit.crop=defaults().crop;edit.rotation=0;edit.straighten=0;edit.flipX=false;edit.flipY=false;}if(comparing)edit.adjustments=defaults().adjustments;return edit;}
+function previewEdit(){const edit=structuredClone(state);if(sharpening.active&&!comparing)edit.adjustments=sharpening.preview(edit.adjustments);if(cropping){edit.crop=defaults().crop;edit.rotation=0;edit.straighten=0;edit.flipX=false;edit.flipY=false;}if(comparing&&!sharpening.active)edit.adjustments=defaults().adjustments;return edit;}
 function currentLayout(edit=previewEdit()){return viewLayout(compositionSize(source.bitmap.width,source.bitmap.height,edit),$('stage').clientWidth,$('stage').clientHeight,cropping?{mode:'fit'}:view);}
 function schedulePreview(){++renderVersion;clearTimeout(previewTimer);if(source&&!exporting)status('Updating…');previewTimer=setTimeout(renderPreview,45);}
 async function renderPreview(){
@@ -107,19 +126,19 @@ async function renderPreview(){
   if(previewProcessing){previewPending=true;return;}
   previewProcessing=true;previewPending=false;
   const version=++renderVersion;
-  const edit=previewEdit(),layout=currentLayout(edit);
+  const edit=previewEdit(),layout=currentLayout(edit),mask=sharpening.active&&sharpening.showMask&&!comparing&&!cropping;
   status('Updating…');
   try {
     const canvas=geometry(source.bitmap,edit,0,layout);
     const ctx=canvas.getContext('2d');const pixels=ctx.getImageData(0,0,canvas.width,canvas.height);
-    const output=await process(pixels.data,edit.adjustments,canvas.width,canvas.height,{radiusScale:layout.scale});
+    const output=await process(pixels.data,edit.adjustments,canvas.width,canvas.height,{radiusScale:layout.scale,showMask:mask});
     if(version!==renderVersion)return;
-    if(showClipping&&!cropping&&!comparing)clippingOverlay(output.data);
+    if(showClipping&&!cropping&&!comparing&&!mask)clippingOverlay(output.data);
     const preview=$('preview');preview.width=canvas.width;preview.height=canvas.height;
     preview.getContext('2d').putImageData(new ImageData(output.data,canvas.width,canvas.height),0,0);
-    $('canvas-wrap').hidden=false;$('welcome').hidden=true;$('before-label').hidden=!comparing;$('stage').classList.add('has-image');
-    layoutCanvas(layout);drawHistogram(output.bins);$('histogram-title').textContent=view.mode==='fit'||cropping?'HISTOGRAM':'HISTOGRAM · VIEWED AREA';
-    status(cropping?'Drag a crop region':comparing?'Original · same composition':'All edits applied');
+    $('canvas-wrap').hidden=false;$('welcome').hidden=true;$('before-label').hidden=!comparing;$('before-label').textContent=sharpening.active?'Applied settings':'Original';$('stage').classList.add('has-image');
+    layoutCanvas(layout);drawHistogram(output.bins);$('histogram-title').textContent=mask?'HISTOGRAM · PHOTOGRAPH':view.mode==='fit'||cropping?'HISTOGRAM':'HISTOGRAM · VIEWED AREA';$('preview').setAttribute('aria-label',mask?'Greyscale sharpening effect mask':'Edited image preview');
+    status(cropping?'Drag a crop region':comparing?(sharpening.active?'Applied sharpening · same composition':'Original · same composition'):mask?'Sharpening mask · preview only':sharpening.active?'Sharpening photograph · preview only':'All edits applied');
   } catch(error){if(version===renderVersion){status('Preview failed');toast(error.message);}}
   finally{previewProcessing=false;if(previewPending){previewPending=false;schedulePreview();}}
 }
@@ -238,7 +257,7 @@ async function loadImage(file,{restored=null}={}){
     if(restored&&restored.hash!==hash)throw new Error('The saved source does not match these edits. Open your original photograph.');
     if(version!==loadVersion){bitmap.close();return;}
     renderVersion++;source?.bitmap.close();source={bitmap,file,mime,hash};bitmap=null;
-    clearTimeout(autosaveTimer);state=restoredState||defaults();history=new History(defaults());history.push(state);comparing=false;view={mode:'fit',zoom:1,panX:0,panY:0};exitCrop(false);
+    sharpening.reset();clearTimeout(autosaveTimer);state=restoredState||defaults();history=new History(defaults());history.push(state);comparing=false;view={mode:'fit',zoom:1,panX:0,panY:0};exitCrop(false);
     pendingRecovery=null;$('recovery-banner').hidden=true;
     $('image-name').textContent=file.name;$('original-size').textContent=`${source.bitmap.width} × ${source.bitmap.height}`;$('file-size').textContent=(file.size/1024/1024).toFixed(2)+' MB';
     $('image-info').textContent=`${file.name} · ${source.bitmap.width} × ${source.bitmap.height}`;
@@ -259,9 +278,9 @@ $('demo').onclick=async()=>{
   const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/png'));if(blob)loadImage(new File([blob],'generated-landscape-demo.png',{type:'image/png'}));
 };
 
-$('undo').onclick=()=>{state=history.undo();comparing=false;sync();schedulePreview();scheduleAutosave();};
-$('redo').onclick=()=>{state=history.redo();comparing=false;sync();schedulePreview();scheduleAutosave();};
-$('reset').onclick=()=>{state=defaults();comparing=false;exitCrop(false);commit();};
+$('undo').onclick=()=>{if(sharpening.active){cancelSharpen();return;}state=history.undo();comparing=false;sync();schedulePreview();scheduleAutosave();};
+$('redo').onclick=()=>{sharpening.cancel();state=history.redo();comparing=false;sync();schedulePreview();scheduleAutosave();};
+$('reset').onclick=()=>{sharpening.cancel();state=defaults();comparing=false;exitCrop(false);commit();};
 $('rotate').onclick=()=>{exitCrop(false);state.rotation=(state.rotation+90)%360;commit();};
 $('flip-x').onclick=()=>{exitCrop(false);state.flipX=!state.flipX;commit();};
 $('flip-y').onclick=()=>{exitCrop(false);state.flipY=!state.flipY;commit();};
@@ -307,15 +326,15 @@ function finishCrop(e){if(!cropStart)return;cropStart=null;if($('crop-overlay').
 $('crop-overlay').onpointerup=finishCrop;$('crop-overlay').onpointercancel=finishCrop;
 
 function download(blob,name){const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);}
-$('save-recipe').onclick=()=>{if(!source)return;const recipe={application:'dk-pixcell',version:3,source:{name:source.file.name,sha256:source.hash,width:source.bitmap.width,height:source.bitmap.height},state:structuredClone(state)};download(new Blob([JSON.stringify(recipe,null,2)],{type:'application/json'}),basename(source.file.name)+'.pixcell.json');toast('Edit recipe saved. Keep it with the original photograph.');};
+$('save-recipe').onclick=()=>{if(!source)return;const recipe={application:'dk-pixcell',version:3,source:{name:source.file.name,sha256:source.hash,width:source.bitmap.width,height:source.bitmap.height},state:structuredClone(state)};download(new Blob([JSON.stringify(recipe,null,2)],{type:'application/json'}),basename(source.file.name)+'.pixcell.json');toast(sharpening.dirty(state.adjustments)?'Applied edits saved. Unapplied sharpening is excluded.':'Edit recipe saved. Keep it with the original photograph.');};
 $('load-recipe').onclick=()=>$('recipe-file').click();
 $('recipe-file').onchange=async()=>{
   const file=$('recipe-file').files[0];const currentSource=source;
-  try{if(!file||!source)return;if(file.size>65536)throw new Error('That edit recipe is too large.');const recipe=JSON.parse(await file.text());if(source!==currentSource)throw new Error('The image changed. Load the recipe again.');if(recipe.application!=='dk-pixcell'||![1,2,3].includes(recipe.version))throw new Error('This is not a supported Pixcell recipe.');if(recipe.source?.sha256!==source.hash||recipe.source.width!==source.bitmap.width||recipe.source.height!==source.bitmap.height)throw new Error('Open the exact original photograph used to save these edits first.');state=validateState(recipe.state);comparing=false;exitCrop(false);commit();toast('Edit recipe loaded.');}catch(error){toast(error.message);}finally{$('recipe-file').value='';}
+  try{if(!file||!source)return;if(file.size>65536)throw new Error('That edit recipe is too large.');const recipe=JSON.parse(await file.text());if(source!==currentSource)throw new Error('The image changed. Load the recipe again.');if(recipe.application!=='dk-pixcell'||![1,2,3].includes(recipe.version))throw new Error('This is not a supported Pixcell recipe.');if(recipe.source?.sha256!==source.hash||recipe.source.width!==source.bitmap.width||recipe.source.height!==source.bitmap.height)throw new Error('Open the exact original photograph used to save these edits first.');sharpening.cancel();state=validateState(recipe.state);comparing=false;exitCrop(false);commit();toast('Edit recipe loaded.');}catch(error){toast(error.message);}finally{$('recipe-file').value='';}
 };
 
 function exportDetails(){
-  if(!source)return;const size=outputSize(source.bitmap.width,source.bitmap.height,state,Number($('export-size').value));$('export-details').textContent=`${size.width} × ${size.height} pixels · no upscaling`;
+  if(!source)return;const size=outputSize(source.bitmap.width,source.bitmap.height,state,Number($('export-size').value));$('export-details').textContent=`${size.width} × ${size.height} pixels · no upscaling`+(sharpening.dirty(state.adjustments)?' · unapplied sharpening excluded':'');
   $('quality-label').hidden=$('export-format').value==='image/png';
 }
 $('export').onclick=()=>{exitCrop(false);comparing=false;sync();schedulePreview();$('export-name').value=basename(source.file.name)+'-edited';$('export-error').textContent='';exportDetails();$('export-dialog').showModal();};

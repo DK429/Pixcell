@@ -21,7 +21,7 @@ Before RAW work, this release adds native-pixel zoom and pan, a 100% detail view
 
 ## 4. Professional adjustment and detail
 
-Delivered in v0.3: luma-only, guided multi-scale sharpening with MAD noise estimation, coherence/edge/luminosity masks, coring, asymmetric gains, local overshoot limits and bounded tile filter workspace. Synthetic image-quality and browser pixel tests accompany the controls. Real-camera validation and mobile performance measurement remain open.
+Delivered in v0.3: luma-only, guided multi-scale sharpening with MAD noise estimation, coherence/edge/luminosity masks, coring, asymmetric gains, local overshoot limits and bounded tile filter workspace. Synthetic image-quality and browser pixel tests accompany the controls. v0.4 adds a greyscale actual-effect map, photograph toggle and staged Apply/Cancel controls; preview masks and temporary changes are excluded from exports and saved edits. Real-camera validation and mobile performance measurement remain open.
 
 Tone curves, HSL and colour mixer, calibrated white balance, eyedropper, split toning, deconvolution and further sharpening refinement, noise reduction, lens correction, chromatic aberration, perspective/straightening, clipping indicators and 100% inspection. Tile large images; use cancellation and memory budgets rather than assuming full images fit in RAM.
 
