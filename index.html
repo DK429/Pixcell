@@ -14,11 +14,12 @@
   <input id="recipe-file" type="file" accept=".json" hidden>
   <main class="workspace">
     <aside class="tools" aria-label="Editing tools">
-      <div class="panel-heading"><span>DEVELOP</span><span class="version">v0.2.1</span></div>
+      <div class="panel-heading"><span>DEVELOP</span><span class="version">v0.3.0</span></div>
       <fieldset id="edit-controls" disabled>
         <section><h2>Looks</h2><div id="presets" class="presets"></div><p class="hint">A starting point. Fine-tune below.</p></section>
         <section><h2>Light</h2><div id="light-controls"></div></section>
         <section><h2>Colour</h2><div id="colour-controls"></div></section>
+        <section><h2>Advanced sharpening</h2><p class="hint">Raise Amount to enable. Inspect at 100% for detail and noise.</p><div id="detail-controls"></div><p class="hint">Fine / medium / coarse balance the detail scales. Higher noise protection suppresses weak detail. Halo allowance 0 gives strict edge limits; 20 allows up to 2% lightness overshoot. ↺ restores each control's starting value.</p></section>
         <section><div class="section-title"><h2>Composition</h2><button id="clear-crop" class="text-button">Reset crop</button></div>
           <div class="button-row"><button id="crop-toggle">Crop</button><button id="rotate" aria-label="Rotate clockwise 90 degrees">↻ Rotate</button></div>
           <div class="button-row"><button id="flip-x">Flip horizontal</button><button id="flip-y">Flip vertical</button></div>

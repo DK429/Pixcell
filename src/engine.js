@@ -1,3 +1,4 @@
+import {sharpenPixels} from './sharpen.js';
 export const CONTROLS = [
   {key:'exposure',label:'Exposure',min:-3,max:3,step:0.05,unit:' EV'},
   {key:'contrast',label:'Contrast',min:-100,max:100,step:1},
@@ -8,7 +9,13 @@ export const CONTROLS = [
   {key:'temperature',label:'Warmth',min:-100,max:100,step:1},
   {key:'tint',label:'Tint',min:-100,max:100,step:1},
   {key:'saturation',label:'Saturation',min:-100,max:100,step:1},
-  {key:'vibrance',label:'Vibrance',min:-100,max:100,step:1}
+  {key:'vibrance',label:'Vibrance',min:-100,max:100,step:1},
+  {key:'sharpenAmount',label:'Sharpen amount',min:0,max:200,step:1,group:'detail'},
+  {key:'sharpenFine',label:'Fine detail',min:0,max:200,step:1,default:80,group:'detail'},
+  {key:'sharpenMedium',label:'Medium detail',min:0,max:200,step:1,default:110,group:'detail'},
+  {key:'sharpenCoarse',label:'Coarse detail',min:0,max:200,step:1,default:60,group:'detail'},
+  {key:'sharpenNoise',label:'Noise protection',min:0,max:200,step:1,default:100,group:'detail'},
+  {key:'sharpenHalo',label:'Halo allowance',min:0,max:20,step:1,group:'detail'}
 ];
 export const PRESETS = {
   Natural: {},
@@ -18,13 +25,14 @@ export const PRESETS = {
   'Golden hour': {temperature:24, tint:5, contrast:8, shadows:12}
 };
 export const clamp = (v, min=0, max=1) => Math.min(max, Math.max(min, v));
-export const defaults = () => ({adjustments:Object.fromEntries(CONTROLS.map(c=>[c.key,0])),crop:{x:0,y:0,w:1,h:1},rotation:0,straighten:0,flipX:false,flipY:false});
+export const defaults = () => ({adjustments:Object.fromEntries(CONTROLS.map(c=>[c.key,c.default??0])),crop:{x:0,y:0,w:1,h:1},rotation:0,straighten:0,flipX:false,flipY:false});
 
 export function validateState(value) {
   if (!value || typeof value !== 'object') throw new Error('Invalid edit recipe.');
   const state = defaults();
   for (const c of CONTROLS) {
-    const v = value.adjustments?.[c.key];
+    const raw = value.adjustments?.[c.key];
+    const v = raw===undefined&&c.group==='detail'?(c.default??0):raw;
     if (!Number.isFinite(v) || v<c.min || v>c.max) throw new Error(`Invalid ${c.label.toLowerCase()} value.`);
     state.adjustments[c.key]=v;
   }
@@ -70,9 +78,9 @@ export function outputSize(width,height,state,maxEdge=0) {
 const linear = new Float64Array(256);
 for(let i=0;i<256;i++){const v=i/255;linear[i]=v<=0.04045?v/12.92:((v+0.055)/1.055)**2.4;}
 function srgb(v){return v<=0.0031308?12.92*v:1.055*Math.pow(v,1/2.4)-0.055;}
-export function processPixels(data,a) {
-  const neutral=CONTROLS.every(c=>a[c.key]===0);
-  if(neutral)return data;
+export function processPixels(data,a,width,height,options={}) {
+  const neutral=CONTROLS.filter(c=>c.group!=='detail').every(c=>a[c.key]===0);
+  if(neutral)return sharpenPixels(data,width,height,a,options);
   const gain=2**a.exposure, contrast=1+a.contrast/140;
   const warmth=a.temperature/500, tint=a.tint/600;
   for(let i=0;i<data.length;i+=4){
@@ -91,7 +99,7 @@ export function processPixels(data,a) {
     data[i+1]=Math.round(clamp(grey+(g-grey)*saturation)*255);
     data[i+2]=Math.round(clamp(grey+(b-grey)*saturation)*255);
   }
-  return data;
+  return sharpenPixels(data,width,height,a,options);
 }
 export function histogram(data) {
   const bins=Array.from({length:3},()=>new Array(256).fill(0));
