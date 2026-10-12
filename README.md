@@ -6,7 +6,7 @@ A non-destructive browser photo editor for DK. Version **0.5.0** adds an editabl
 
 Requires Node.js 22 or newer. No package installation or build step is needed.
 
-The test suite includes 35 engine/view/detail/project tests and browser workflows for Chromium, Firefox and WebKit at desktop and mobile widths. Browser tests run in GitHub Actions and must pass before the live demo deploys.
+The test suite includes 36 engine/view/detail/project tests and browser workflows for Chromium, Firefox and WebKit at desktop and mobile widths. Browser tests run in GitHub Actions and must pass before the live demo deploys.
 
 ```sh
 npm start

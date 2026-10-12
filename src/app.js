@@ -194,7 +194,7 @@ function brushPoint(point){const edit=previewEdit(),layout=currentLayout(edit),m
 function showBrush(point){const c=$('brush-cursor');c.hidden=!painting();c.style.left=point.x+'px';c.style.top=point.y+'px';c.style.width=c.style.height=$('brush-size').value+'px';}
 $('stage').addEventListener('pointerleave',()=>$('brush-cursor').hidden=true);
 function appendBrush(point){
-  if(!brushStroke)return;const p=brushPoint(point),last=brushStroke.points.at(-1);
+  if(!brushStroke)return;const p=brushPoint(point).map((v,i)=>clamp(v,0,i?source.bitmap.height:source.bitmap.width)),last=brushStroke.points.at(-1);
   if(Math.hypot(p[0]-last[0],p[1]-last[1])<brushStroke.radius*.08)return;
   if(brushStroke.points.length>=5000){toast('Stroke limit reached. Release and start another stroke.');return;}
   brushStroke.points.push(p);schedulePreview();

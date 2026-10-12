@@ -50,3 +50,9 @@ test('layer validation rejects hostile coordinates, unlimited strokes and invali
   for(const layer of [{...emptyLayer(),opacity:101},{...emptyLayer(),visible:'yes'},{...emptyLayer(),strokes:[{...stroke(),points:[[Infinity,0]]}]},{...emptyLayer(),strokes:Array(2001).fill(stroke())}])assert.throws(()=>validateState({...defaults(),sharpeningLayer:layer}));
   const legacy=defaults();delete legacy.sharpeningLayer;legacy.adjustments.sharpenAmount=100;assert.equal(validateState(legacy).sharpeningLayer.exists,true);
 });
+
+test('transparent holes cannot poison feathered masks or create black opaque pixels',()=>{
+  const data=fixture();for(let y=0;y<h;y++)for(let x=0;x<60;x++)data[(y*w+x)*4+3]=0;
+  const before=data.slice(),selectionMap=new Float32Array(w*h);processPixels(data,{...defaults().adjustments,sharpenAmount:200,edgeWidth:8,edgeFeather:5},w,h,{selectionMap});
+  assert.ok(selectionMap.every(Number.isFinite));for(let i=0;i<w*h;i++){if(before[i*4+3]===0){assert.deepEqual(data.slice(i*4,i*4+4),before.slice(i*4,i*4+4));assert.equal(selectionMap[i],0);}else assert.ok(data[i*4]>=60);}
+});
