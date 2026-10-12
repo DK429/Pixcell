@@ -56,3 +56,12 @@ test('transparent holes cannot poison feathered masks or create black opaque pix
   const before=data.slice(),selectionMap=new Float32Array(w*h);processPixels(data,{...defaults().adjustments,sharpenAmount:200,edgeWidth:8,edgeFeather:5},w,h,{selectionMap});
   assert.ok(selectionMap.every(Number.isFinite));for(let i=0;i<w*h;i++){if(before[i*4+3]===0){assert.deepEqual(data.slice(i*4,i*4+4),before.slice(i*4,i*4+4));assert.equal(selectionMap[i],0);}else assert.ok(data[i*4]>=60);}
 });
+test('edge threshold uses source-pixel gradient units at different preview scales',()=>{
+  const coverage=[];
+  for(const scale of [.5,1,2]){
+    const width=160*scale,height=48*scale,data=new Uint8ClampedArray(width*height*4),selectionMap=new Float32Array(width*height);
+    for(let y=0;y<height;y++)for(let x=0;x<width;x++){const v=Math.round(70+100/(1+Math.exp(-((x+.5)/scale-80)/5)));data.set([v,v,v,255],(y*width+x)*4);}
+    processPixels(data,defaults().adjustments,width,height,{radiusScale:scale,selectionMap});let sum=0;for(let x=0;x<width;x++)sum+=selectionMap[Math.floor(height/2)*width+x];coverage.push(sum/scale);
+  }
+  assert.ok(coverage[1]>20);for(const value of coverage)assert.ok(Math.abs(value/coverage[1]-1)<.15,coverage.join(','));
+});

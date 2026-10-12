@@ -105,7 +105,7 @@ function sharpenTile(L,weight,w,h,settings,sigma,radii,scale){
     const coherence=Math.hypot(Jxx[i]-Jyy[i],2*Jxy[i])/(Jxx[i]+Jyy[i]+1e-10);
     const threshold=.0002+(settings.edgeThreshold??15)/100*.018;
     const floor=Math.max(threshold,noise/Math.max(1,2*suppression+1));
-    mask[i]=smooth(grad[i]*Math.max(1,scale),floor,floor*2.5)*smooth(coherence,.15,.8)*smooth(guide[i],.02,.1)*(1-smooth(guide[i],.9,.99));
+    mask[i]=smooth(grad[i]*scale,floor,floor*2.5)*smooth(coherence,.15,.8)*smooth(guide[i],.02,.1)*(1-smooth(guide[i],.9,.99));
   }
   const expand=Math.max(0,Math.round((settings.edgeWidth??1)*scale)),feather=Math.max(0,Math.round((settings.edgeFeather??1)*scale));
   if(expand){mask=localExtrema(mask,weight,w,h,expand,false);for(let i=0;i<mask.length;i++)if(!Number.isFinite(mask[i]))mask[i]=0;}
