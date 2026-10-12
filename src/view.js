@@ -1,4 +1,4 @@
-import {clamp} from './engine.js?v=0.4.0';
+import {clamp} from './engine.js?v=0.5.0';
 
 export function viewLayout(image,width,height,view,padding=26) {
   const availableWidth=Math.max(1,width-padding*2),availableHeight=Math.max(1,height-padding*2);

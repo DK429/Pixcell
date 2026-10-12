@@ -1,12 +1,12 @@
 # Pixcell
 
-A non-destructive browser photo editor for DK. Version **0.4.0** adds a live greyscale sharpening effect mask, a photograph preview toggle and staged Apply/Cancel controls.
+A non-destructive browser photo editor for DK. Version **0.5.0** adds an editable Sharpening layer, a find-edges style selection mask, erase/restore brushes and portable `.pixcell` projects.
 
 ## Run
 
 Requires Node.js 22 or newer. No package installation or build step is needed.
 
-The test suite includes 29 engine/view/detail tests and browser workflows for Chromium, Firefox and WebKit at desktop and mobile widths. Browser tests run in GitHub Actions and must pass before the live demo deploys.
+The test suite includes 37 engine/view/detail/project tests and browser workflows for Chromium, Firefox and WebKit at desktop and mobile widths. Browser tests run in GitHub Actions and must pass before the live demo deploys.
 
 ```sh
 npm start
@@ -19,7 +19,8 @@ Open http://localhost:4173. Use `npm test` for engine tests and `npm run check` 
 - Open JPEG, PNG and WebP; file signatures are checked before decoding.
 - Exposure in linear light; contrast, highlights, shadows, whites, blacks, warmth, tint, saturation and vibrance.
 - Enter exact values beside every Light, Colour and Straighten slider. Press Enter or leave the field to apply; Escape cancels a pending entry. Values stay within the slider's range and step (exposure: 0.05 EV; other adjustments: 1; straightening: 0.1°). The ↺ button resets just that adjustment to exactly zero; both entry and resets support undo/redo.
-- Advanced sharpening with Amount, Fine / Medium / Coarse detail gains, Noise protection and Halo allowance. Amount starts at zero; raise it to enable. Sharpening opens with a greyscale effect mask; toggle it off to inspect the photograph. Sliders and numeric entry stage changes; Apply commits one undoable edit, Cancel discards the preview. Recipes, recovery and exports contain applied settings only.
+- Edge-mask sharpening with Detail suppression, Edge threshold, Edge width and Feather. Paint exclusions with erase/restore brushes; Amount and band gains control strength independently. Apply retains one editable Sharpening layer with visibility, opacity and deletion.
+- Save/open `.pixcell` projects containing the original image bytes, all applied adjustments, layer settings and lossless vector brush strokes. No original file is needed separately to reopen a project.
 - Five adjustable looks, RGB histogram, comparison with original colours at the same composition.
 - Drag crop selection with free or fixed ratios; rotate by 90° and flip.
 - Straighten by up to 15° in either direction, with automatic edge trimming. Undo/reset restores the original composition; exports use the same geometry as the preview.
@@ -35,19 +36,21 @@ Open http://localhost:4173. Use `npm test` for engine tests and `npm run check` 
 
 ### Advanced sharpening
 
-Click **Enable sharpening** to start a preview at **Amount 100**, or **Preview sharpening** to inspect settings already applied. The **Show sharpening effect mask** toggle is on by default for each opened image. Black means no final pixel change; grey/white means stronger changes. The map measures actual 8-bit pixel changes after all masks, overshoot limits and gamut handling. Its fixed display curve boosts small changes; it is not a literal opacity mask or a standalone find-edges filter. Moving sliders updates the map; uncheck the toggle to inspect the staged photograph.
+Click **Add sharpening layer** or **Edit sharpening layer**. The **Show edge mask** toggle starts on for each image: white selects edges, grey selects them partially, black protects them. Unlike v0.4's amplified difference map, this is the actual selection used by sharpening. Amount and band gains do not change the selection; zero Amount leaves the mask visible while producing no sharpening.
 
-**Apply sharpening** commits all staged detail controls in one undoable edit and returns to the photograph. **Cancel** restores the applied settings. While previewing, **Applied / preview** compares the current applied photograph with the staged result or mask. Undo first cancels an active sharpening preview; after Apply, Undo restores the prior applied edit. Light/Colour and composition edits remain independent. Opening another source, loading a recipe, resetting all edits or choosing a look discards the temporary sharpening preview.
+**Detail suppression** smooths the denoised lightness guide before edge detection. **Edge threshold** rejects weak gradients, **Edge width** expands outlines and **Feather** softens the result. Structure coherence and luminosity protection are retained. The pre-detection smoothing and feather use three box passes (a Gaussian approximation). Detail bands remain edge-preserving guided filters at native radii 1 / 3 / 6, with noise coring, reduced bright-side gain, local overshoot bounds and Oklab lightness-only reconstruction. Fine gain now defaults to 40 to reduce texture enhancement.
 
-Unapplied sharpening is excluded from exports, recipes and recovery; the export dialog and recipe-save message say so. Reloading restores applied edits only. The mask is never exported, stored in a recipe or baked into the source. Amount zero gives a black effect map and disables the dependent detail/noise/halo controls. Reset buttons restore each detail control's starting value; Amount and Halo allowance return to zero. Inspect at **100%**, particularly skies, shadows and high-contrast edges. Raise noise protection for noisy images, reduce fine detail if grain becomes visible, and keep halo allowance at zero for strict local bounds.
+Select **Erase sharpening** and paint with a mouse, one finger or Pencil. **Restore sharpening** removes painted exclusions but cannot add edges absent from the automatic mask. Brush size is displayed in viewport pixels, while strokes are stored in original-image coordinates. Softness and strength control the stroke profile. Two fingers pan/pinch; if a second pointer joins, the first pointer's pending stroke is discarded. Choose **Pan / zoom** for single-pointer navigation. Brush Undo/Redo operates on individual strokes; edits to the mask sliders keep the strokes. Cropping, rotation, flips, straightening, zoom and export use the same source-coordinate transform.
 
-After Light and Colour, sRGB is linearised and converted to Oklab. Only its float32 L plane is filtered; a/b are retained on reconstruction. A global, bounded-sample MAD estimate uses a high-pass kernel normalised to unit noise energy. An alpha-aware guided filter builds a denoised guide; gradient strength, structure-tensor coherence and luminosity protection form a guided-feathered mask. Three successive guided detail bands use radii 1 / 3 / 6 at native size, separate gains, noise coring and 65% gain for positive detail. A local 5×5 min/max clamp limits overshoot. Halo allowance 0–20 corresponds to 0–0.02 in Oklab L. Out-of-gamut pixels reduce the L change while retaining a/b, rather than clipping RGB independently. Quantisation can still cause small chroma differences.
+**Apply sharpening** commits controls and strokes as one undoable edit; **Cancel** discards the preview. The separate Sharpening layer remains editable, with visibility, opacity and Delete. This release supports one sharpening adjustment layer above the developed photograph, not arbitrary stacked raster layers. Light/Colour edits continue to flow through it. Normal exports flatten the visible result and never include the grey mask. While editing the layer, the comparison button shows the previously applied state.
+
+**Save project** downloads a versioned ZIP STORE archive with `project.json` and `source`. The original bytes are preserved without recompression; brush masks are lossless vector strokes in the manifest. CRC checks, source SHA-256, image dimensions, schema/version and size limits are validated on opening. Projects, v4 recipes and recovery contain applied state only; Apply a preview before saving it. Recipes still require the separate matching original. Legacy recipes remain readable. Undo history and unapplied drafts are not stored in project files. Brush limits: 2,000 strokes / 100,000 points; project manifest limit 8 MiB. This is Pixcell's native format, not PSD interchange.
 
 The immutable full L plane costs four bytes per pixel (about 153 MiB at 40 MP); other filter planes are restricted to 256-pixel tiles with analytically derived overlap. This bounds filter workspace, not total browser/canvas memory. Fully and partially transparent pixels are unchanged by sharpening and excluded from guides and noise estimation. Existing Light/Colour adjustments still affect partially transparent pixels.
 
 Preview filter radii follow its sampling scale; exports sharpen at the selected output resolution. Native 100% gives the most reliable inspection. Fit, resized exports and zoomed viewport noise estimates can differ from a full-image render, particularly on mixed-detail scenes. This is still an 8-bit SDR input/output pipeline, not sensor RAW development or an end-to-end float colour engine. Sharpening does not recover real motion or lens blur. Deconvolution, BM3D/NLM, learned deblurring and GPU acceleration are future work.
 
-`npm run evaluate:sharpen` measures synthetic slanted-edge 10–90% rise distance and approximate MTF50, flat-patch noise, step-edge overshoot and elapsed processing time. It prints measurements rather than an image-quality certification; camera images, measured lens targets and device-specific memory/responsiveness benchmarks are still needed. Unit tests additionally check exact bypass, chroma, alpha, legacy recipes and tile boundaries; browser checks cover default greyscale mask updates, photo toggle, staged Apply/Cancel, applied comparison, one-step undo, clean PNG exports, recipes/recovery and worker fallback.
+`npm run evaluate:sharpen` measures synthetic slanted-edge 10–90% rise distance and approximate MTF50, flat-patch noise, step-edge overshoot and elapsed processing time. It prints measurements rather than an image-quality certification; camera images, measured lens targets and device-specific memory/responsiveness benchmarks are still needed. Unit tests additionally check exact bypass, chroma, alpha, legacy recipes and tile boundaries; browser checks cover mask/strength separation, brush editing, layer controls, project round trips, clean PNG exports, recipes/recovery, mobile interaction and worker fallback.
 
 Algorithm references: [Guided Image Filtering (He, Sun & Tang)](https://kaiminghe.github.io/publications/eccv10guidedfilter.pdf) and [Oklab (Ottosson)](https://bottosson.github.io/posts/oklab/).
 
@@ -57,7 +60,7 @@ Algorithm references: [Guided Image Filtering (He, Sun & Tang)](https://kaimingh
 
 ### Recovery behaviour
 
-The current source file and edit state are stored in IndexedDB on this device. A small synchronous draft records the latest slider state between database saves. The UI reports whether the session was saved or recovery is unavailable. Browser storage may be blocked, cleared or evicted, and private browsing may not retain it; recovery is not a substitute for keeping the original and exporting an edit recipe. Undo history is restarted when resuming. Recovery does not upload photographs or share sessions between devices. Disabling recovery clears the previously saved session.
+The current source file and edit state are stored in IndexedDB on this device. A small synchronous draft records the latest slider state between database saves. The UI reports whether the session was saved or recovery is unavailable. Browser storage may be blocked, cleared or evicted, and private browsing may not retain it; recovery is not a substitute for saving a project. Undo history is restarted when resuming. Recovery does not upload photographs or share sessions between devices. Disabling recovery clears the previously saved session.
 
 ### Browser tests
 
@@ -105,13 +108,13 @@ Do not publish private photographs as repository files. The app opens files chos
 | Colour | Browser colour conversion; no controlled ICC, wide-gamut, HDR, 16-bit or print-proofing pipeline. |
 | Metadata | Exports do not preserve source EXIF/IPTC/XMP or embedded source ICC profiles. Browser JPEG orientation is applied on decode. |
 | Multi-frame files | Animated PNG/WebP decode to a single still frame; no animation editing or export. |
-| Storage | One source image in memory and one optional local recovery session. Retain the original and saved recipes for durable backups. |
+| Storage | One source image in memory and one optional local recovery session. Save .pixcell projects for portable backups. |
 | Browser support | Modern browsers with Canvas, createImageBitmap, Web Crypto and modules. PNG export is the fallback choice; WebP encoding varies by browser. |
-| Advanced tools | No masks, layers, curves, retouching, AI edits, standalone denoise, lens profiles, library/catalogue or batch processing yet. |
+| Advanced tools | One sharpening layer and its edge/brush mask. No general layer stack, curves, retouching, AI edits, standalone denoise, lens profiles, catalogue or batch processing yet. |
 
 ## Architecture
 
-`src/engine.js` contains pixel adjustments, composition sizing, clipping, state validation and history. `src/sharpen.js` contains the tiled Oklab sharpening pipeline and actual-effect visualization. `src/sharpen-state.js` keeps temporary sharpening separate from applied edits. `src/geometry.js` samples crop/orientation/straightening for preview and export. `src/view.js` handles viewport sizing and zoom anchors. `src/recovery.js` manages the local source, edit state and lightweight draft. `src/worker.js` processes transferred pixel buffers. `src/app.js` connects import, controls, inspection and export. Everything runs on the device.
+`src/engine.js` contains pixel adjustments, composition sizing, clipping, state validation and history. `src/sharpen.js` contains the tiled Oklab sharpening pipeline and edge selection. `src/sharpen-state.js` keeps temporary sharpening separate from applied edits. `src/mask.js` validates layers and rasterizes source-anchored vector masks. `src/project.js` reads/writes checked portable ZIP projects. `src/geometry.js` samples crop/orientation/straightening for preview and export. `src/view.js` handles viewport sizing and zoom anchors. `src/recovery.js` manages the local source, edit state and lightweight draft. `src/worker.js` processes transferred pixel buffers. `src/app.js` connects import, controls, inspection and export. Everything runs on the device.
 
 Read [ROADMAP.md](ROADMAP.md) for the stages required for a competitive editor. The current source uses platform APIs and has no third-party runtime dependencies.
 

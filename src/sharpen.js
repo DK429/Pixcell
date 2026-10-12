@@ -1,3 +1,4 @@
+import {brushMask} from './mask.js?v=0.5.0';
 // Oklab matrices: https://bottosson.github.io/posts/oklab/
 // Guided filter: He, Sun & Tang, ECCV 2010. All filter planes use float32.
 const clamp=(x,a=0,b=1)=>Math.min(b,Math.max(a,x));
@@ -88,10 +89,13 @@ export function estimateNoise(L,data,w,h){
 function sharpenTile(L,weight,w,h,settings,sigma,radii,scale){
   const radius=n=>Math.max(1,Math.round(n*scale)),noise=Math.max(.0002,sigma*settings.sharpenNoise/100);
   const guide=guided(L,L,weight,w,h,radius(2),Math.max(1e-7,(1.5*noise)**2));
+  const suppression=Math.max(0,Math.round((settings.edgeSuppression??2)*scale));
+  let edgeGuide=guide;
+  if(suppression){const counts=boxSum(weight,w,h,suppression);for(let n=0;n<3;n++)edgeGuide=mean(edgeGuide,weight,w,h,suppression,counts);}
   const xx=new Float32Array(L.length),yy=new Float32Array(L.length),xy=new Float32Array(L.length),grad=new Float32Array(L.length);
   for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++){
     const i=y*w+x;if(!weight[i]||!weight[i-1]||!weight[i+1]||!weight[i-w]||!weight[i+w])continue;
-    const gx=(guide[i+1]-guide[i-1])*.5,gy=(guide[i+w]-guide[i-w])*.5;
+    const gx=(edgeGuide[i+1]-edgeGuide[i-1])*.5,gy=(edgeGuide[i+w]-edgeGuide[i-w])*.5;
     xx[i]=gx*gx;yy[i]=gy*gy;xy[i]=gx*gy;grad[i]=Math.hypot(gx,gy);
   }
   const tensorR=radius(2),counts=boxSum(weight,w,h,tensorR);
@@ -99,9 +103,14 @@ function sharpenTile(L,weight,w,h,settings,sigma,radii,scale){
   let mask=new Float32Array(L.length);
   for(let i=0;i<mask.length;i++){
     const coherence=Math.hypot(Jxx[i]-Jyy[i],2*Jxy[i])/(Jxx[i]+Jyy[i]+1e-10);
-    mask[i]=smooth(grad[i],noise,3*noise)*clamp(coherence)*smooth(guide[i],.02,.1)*(1-smooth(guide[i],.9,.99));
+    const threshold=.0002+(settings.edgeThreshold??15)/100*.018;
+    const floor=Math.max(threshold,noise/Math.max(1,2*suppression+1));
+    mask[i]=smooth(grad[i]*scale,floor,floor*2.5)*smooth(coherence,.15,.8)*smooth(guide[i],.02,.1)*(1-smooth(guide[i],.9,.99));
   }
-  mask=guided(guide,mask,weight,w,h,radius(4),1e-3);
+  const expand=Math.max(0,Math.round((settings.edgeWidth??1)*scale)),feather=Math.max(0,Math.round((settings.edgeFeather??1)*scale));
+  if(expand){mask=localExtrema(mask,weight,w,h,expand,false);for(let i=0;i<mask.length;i++)if(!Number.isFinite(mask[i]))mask[i]=0;}
+  if(feather){const counts=boxSum(weight,w,h,feather);for(let n=0;n<3;n++)mask=mean(mask,weight,w,h,feather,counts);}
+  for(let i=0;i<mask.length;i++)mask[i]=weight[i]?clamp(mask[i]):0;
   const out=L.slice(),gains=[settings.sharpenFine,settings.sharpenMedium,settings.sharpenCoarse];let previous=L;
   for(let band=0;band<radii.length;band++){
     // A fixed detail floor is essential: sigma=0 must still sharpen a clean edge.
@@ -121,30 +130,33 @@ function sharpenTile(L,weight,w,h,settings,sigma,radii,scale){
     const protect=smooth(L[i],.02,.1)*(1-smooth(L[i],.9,.99));
     out[i]=clamp(L[i]+(out[i]-L[i])*protect,Math.max(0,low[i]-halo),Math.min(1,high[i]+halo));
   }
-  return out;
+  return {out,mask};
 }
 
-export function sharpenPixels(data,width,height,settings,{radiusScale=1,tileSize=256,effectMap=null}={}){
+export function sharpenPixels(data,width,height,settings,{radiusScale=1,tileSize=256,effectMap=null,selectionMap=null,layer=null,matrix}={}){
   if(effectMap){if(effectMap.length!==data.length/4)throw new Error('Invalid sharpening effect buffer.');effectMap.fill(0);}
-  if(!settings.sharpenAmount)return data;
+  if(selectionMap){if(selectionMap.length!==data.length/4)throw new Error('Invalid edge mask buffer.');selectionMap.fill(0);}
+  if((!settings.sharpenAmount&&!selectionMap)||(layer&&(!layer.exists||!layer.visible)))return data;
   if(!Number.isInteger(width)||!Number.isInteger(height)||width<1||height<1||data.length!==width*height*4)throw new Error('Sharpening requires image dimensions.');
   if(!Number.isFinite(radiusScale)||!Number.isInteger(tileSize)||tileSize<1)throw new Error('Invalid sharpening scale or tile size.');
   const scale=clamp(radiusScale,.1,4),r=n=>Math.max(1,Math.round(n*scale)),radii=[r(1),r(3),r(6)];
   const L=new Float32Array(width*height);
   for(let i=0;i<L.length;i++)if(data[i*4+3]===255)L[i]=toLab(data[i*4],data[i*4+1],data[i*4+2])[0];
-  const sigma=estimateNoise(L,data,width,height);
+  const sigma=estimateNoise(L,data,width,height),paint=brushMask(width,height,layer?.strokes,matrix),opacity=(layer?.opacity??100)/100;
   // Exact finite filter support: each guided pass has support 2*r.
-  const pad=Math.max(2*r(2)+2*radii.reduce((a,b)=>a+b,0),2*r(2)+1+r(2)+2*r(4),r(2));
+  const pad=Math.max(2*r(2)+2*radii.reduce((a,b)=>a+b,0),2*r(2)+3*Math.max(0,Math.round((settings.edgeSuppression??2)*scale))+1+r(2)+Math.max(0,Math.round((settings.edgeWidth??1)*scale))+3*Math.max(0,Math.round((settings.edgeFeather??1)*scale)),r(2));
   for(let y=0;y<height;y+=tileSize)for(let x=0;x<width;x+=tileSize){
     const right=Math.min(width,x+tileSize),bottom=Math.min(height,y+tileSize);
     const left=Math.max(0,x-pad),top=Math.max(0,y-pad),w=Math.min(width,right+pad)-left,h=Math.min(height,bottom+pad)-top;
     const tile=new Float32Array(w*h),weight=new Float32Array(w*h);
     for(let ty=0;ty<h;ty++)for(let tx=0;tx<w;tx++){const src=(top+ty)*width+left+tx,k=ty*w+tx;tile[k]=L[src];weight[k]=data[src*4+3]===255?1:0;}
-    const out=sharpenTile(tile,weight,w,h,settings,sigma,radii,scale);
+    const {out,mask}=sharpenTile(tile,weight,w,h,settings,sigma,radii,scale);
     for(let cy=y;cy<bottom;cy++)for(let cx=x;cx<right;cx++){
       const i=cy*width+cx;if(data[i*4+3]!==255)continue;
       const k=i*4,r=data[k],g=data[k+1],b=data[k+2];
-      writeLightness(data,k,out[(cy-top)*w+cx-left]);
+      const ti=(cy-top)*w+cx-left,brush=paint?paint[i]:1;
+      if(selectionMap)selectionMap[i]=mask[ti]*brush;
+      writeLightness(data,k,L[i]+(out[ti]-L[i])*brush*opacity);
       // Measure actual final 8-bit pixel change, after all masks, bounds and gamut handling.
       if(effectMap&&(r!==data[k]||g!==data[k+1]||b!==data[k+2]))effectMap[i]=Math.abs(toLab(data[k],data[k+1],data[k+2])[0]-L[i]);
     }

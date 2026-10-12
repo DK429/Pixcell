@@ -1,4 +1,5 @@
-import {sharpenPixels} from './sharpen.js?v=0.4.0';
+import {validateLayer,emptyLayer} from './mask.js?v=0.5.0';
+import {sharpenPixels} from './sharpen.js?v=0.5.0';
 export const CONTROLS = [
   {key:'exposure',label:'Exposure',min:-3,max:3,step:0.05,unit:' EV'},
   {key:'contrast',label:'Contrast',min:-100,max:100,step:1},
@@ -11,7 +12,11 @@ export const CONTROLS = [
   {key:'saturation',label:'Saturation',min:-100,max:100,step:1},
   {key:'vibrance',label:'Vibrance',min:-100,max:100,step:1},
   {key:'sharpenAmount',label:'Sharpen amount',min:0,max:200,step:1,group:'detail'},
-  {key:'sharpenFine',label:'Fine detail',min:0,max:200,step:1,default:80,group:'detail'},
+  {key:'edgeSuppression',label:'Detail suppression',min:0,max:8,step:.5,default:2,group:'detail'},
+  {key:'edgeThreshold',label:'Edge threshold',min:0,max:100,step:1,default:15,group:'detail'},
+  {key:'edgeWidth',label:'Edge width',min:0,max:8,step:.5,default:1,group:'detail'},
+  {key:'edgeFeather',label:'Feather',min:0,max:5,step:.5,default:1,group:'detail'},
+  {key:'sharpenFine',label:'Fine detail',min:0,max:200,step:1,default:40,group:'detail'},
   {key:'sharpenMedium',label:'Medium detail',min:0,max:200,step:1,default:110,group:'detail'},
   {key:'sharpenCoarse',label:'Coarse detail',min:0,max:200,step:1,default:60,group:'detail'},
   {key:'sharpenNoise',label:'Noise protection',min:0,max:200,step:1,default:100,group:'detail'},
@@ -25,7 +30,7 @@ export const PRESETS = {
   'Golden hour': {temperature:24, tint:5, contrast:8, shadows:12}
 };
 export const clamp = (v, min=0, max=1) => Math.min(max, Math.max(min, v));
-export const defaults = () => ({adjustments:Object.fromEntries(CONTROLS.map(c=>[c.key,c.default??0])),crop:{x:0,y:0,w:1,h:1},rotation:0,straighten:0,flipX:false,flipY:false});
+export const defaults = () => ({adjustments:Object.fromEntries(CONTROLS.map(c=>[c.key,c.default??0])),sharpeningLayer:emptyLayer(),crop:{x:0,y:0,w:1,h:1},rotation:0,straighten:0,flipX:false,flipY:false});
 
 export function validateState(value) {
   if (!value || typeof value !== 'object') throw new Error('Invalid edit recipe.');
@@ -44,6 +49,7 @@ export function validateState(value) {
   const angle=value.straighten===undefined?0:value.straighten;
   if(!Number.isFinite(angle)||angle < -15||angle > 15)throw new Error('Invalid straightening angle.');
   state.straighten=angle;
+  state.sharpeningLayer=validateLayer(value.sharpeningLayer,state.adjustments.sharpenAmount>0);
   return state;
 }
 
