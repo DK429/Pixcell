@@ -99,13 +99,13 @@ function sharpenTile(L,weight,w,h,settings,sigma,radii,scale){
   let mask=new Float32Array(L.length);
   for(let i=0;i<mask.length;i++){
     const coherence=Math.hypot(Jxx[i]-Jyy[i],2*Jxy[i])/(Jxx[i]+Jyy[i]+1e-10);
-    mask[i]=smooth(grad[i],2*noise,6*noise)*clamp(coherence)*smooth(guide[i],.02,.1)*(1-smooth(guide[i],.9,.99));
+    mask[i]=smooth(grad[i],noise,3*noise)*clamp(coherence)*smooth(guide[i],.02,.1)*(1-smooth(guide[i],.9,.99));
   }
   mask=guided(guide,mask,weight,w,h,radius(4),1e-3);
   const out=L.slice(),gains=[settings.sharpenFine,settings.sharpenMedium,settings.sharpenCoarse];let previous=L;
   for(let band=0;band<radii.length;band++){
     // A fixed detail floor is essential: sigma=0 must still sharpen a clean edge.
-    const base=guided(guide,previous,weight,w,h,radii[band],Math.max(4e-4,(2*noise)**2));
+    const base=guided(guide,previous,weight,w,h,radii[band],Math.max(2.5e-3,(2*noise)**2));
     // Averaging reduces noise in the coarser bands; keep the fine band conservative.
     const bandNoise=noise*[1,.5,.25][band];
     for(let i=0;i<out.length;i++){

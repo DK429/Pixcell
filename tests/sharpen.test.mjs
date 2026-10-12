@@ -26,6 +26,17 @@ test('clean soft edge sharpens at zero estimated noise without overshoot',()=>{
   const before=rise(data,w,h);processPixels(data,{...settings(),sharpenAmount:200},w,h);assert.ok(rise(data,w,h)<before,`${rise(data,w,h)} vs ${before}`);
   for(let i=0;i<data.length;i+=4){let low=255,high=0;const x=(i/4)%w,y=Math.floor(i/4/w);for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){if(x+dx<0||x+dx>=w||y+dy<0||y+dy>=h)continue;const v=original[((y+dy)*w+x+dx)*4];low=Math.min(low,v);high=Math.max(high,v);}assert.ok(data[i]>=low&&data[i]<=high);}
 });
+test('default amount produces a meaningful edge response and every detail gain changes pixels',()=>{
+  const w=160,h=48,source=image(w,h,x=>{const v=Math.round(70+100/(1+Math.exp(-(x-80)/5)));return [v,v,v,255];});
+  const normal=source.slice(),strong=source.slice();processPixels(normal,settings(),w,h);processPixels(strong,{...settings(),sharpenAmount:200},w,h);
+  assert.ok(rise(normal,w,h)<rise(source,w,h)*.95,'Amount 100 must reduce the 10–90% rise distance by at least 5%');
+  assert.ok(rise(strong,w,h)<rise(normal,w,h),'Raising Amount must increase edge response');
+  let maximum=0;for(let i=0;i<normal.length;i+=4)maximum=Math.max(maximum,Math.abs(normal[i]-source[i]));assert.ok(maximum>=2);
+  for(const band of ['sharpenFine','sharpenMedium','sharpenCoarse']){
+    const out=source.slice();processPixels(out,{...settings(),sharpenFine:0,sharpenMedium:0,sharpenCoarse:0,[band]:200},w,h);
+    assert.notDeepEqual(out,source,band+' must affect pixels independently');
+  }
+});
 test('lightness-only sharpening preserves Oklab chroma to 8-bit quantization tolerance',()=>{
   const w=120,h=40,data=image(w,h,x=>{const v=Math.round(100+60/(1+Math.exp(-(x-60)/5)));return [v,Math.round(v*.7),Math.round(v*.45),255];}),original=data.slice();
   processPixels(data,{...settings(),sharpenAmount:200},w,h);let changed=0;

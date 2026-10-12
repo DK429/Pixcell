@@ -28,6 +28,7 @@ function basename(name){return name.replace(/\.[^.]+$/,'');}
 function busy(value){blocked=value;$('edit-controls').disabled=value||!source;$('export').disabled=value||!source;$('open').disabled=value;$('welcome-open').disabled=value;$('demo').disabled=value;$('resume-session').disabled=value;$('file').disabled=value;sync();}
 function sync(){
   for(const c of CONTROLS){$('control-'+c.key).value=state.adjustments[c.key];$('value-'+c.key).value=numberText(c,state.adjustments[c.key]);}
+  syncSharpen();
   $('undo').disabled=!source||!history.canUndo||blocked||cropping;
   $('redo').disabled=!source||!history.canRedo||blocked||cropping;
   $('compare').disabled=!source||cropping||blocked;
@@ -45,6 +46,14 @@ function sync(){
   else{$('custom-zoom').textContent=Math.round(view.zoom*100)+'%';$('custom-zoom').hidden=false;$('zoom').value='custom';}
   $('view-hint').textContent=showClipping?'Clipping: blue shadows · red highlights':'Drag to pan · scroll or pinch to zoom';
   if(source){const size=outputSize(source.bitmap.width,source.bitmap.height,state);$('edited-size').textContent=`${size.width} × ${size.height}`;}
+}
+function syncSharpen(){
+  const off=state.adjustments.sharpenAmount===0;
+  $('enable-sharpen').hidden=!off;
+  $('sharpen-status').textContent=off?'Off · Enable sharpening or raise Amount.':'On · Amount '+state.adjustments.sharpenAmount+' · inspect at 100%';
+  for(const c of CONTROLS.filter(c=>c.group==='detail'&&c.key!=='sharpenAmount')){
+    for(const prefix of ['control-','value-','reset-'])$(prefix+c.key).disabled=off;
+  }
 }
 function commit(){history.push(state);sync();schedulePreview();scheduleAutosave();}
 function numberText(c,value){return Number(value).toFixed((String(c.step).split('.')[1]||'').length);}
@@ -77,12 +86,13 @@ for(const [index,c] of CONTROLS.entries()){
   const heading=document.createElement('div');heading.className='control-heading';
   const label=document.createElement('label');label.htmlFor='control-'+c.key;label.textContent=c.label;
   const input=document.createElement('input');input.type='range';input.id=label.htmlFor;input.min=c.min;input.max=c.max;input.step=c.step;input.value=c.default??0;
-  input.oninput=()=>{state.adjustments[c.key]=Number(input.value);$('value-'+c.key).value=numberText(c,Number(input.value));schedulePreview();scheduleAutosave();};
+  input.oninput=()=>{state.adjustments[c.key]=Number(input.value);$('value-'+c.key).value=numberText(c,Number(input.value));syncSharpen();schedulePreview();scheduleAutosave();};
   input.onchange=commit;
   input.ondblclick=()=>{state.adjustments[c.key]=c.default??0;commit();};
   heading.append(label);addPrecisionControl(heading,{...c,valueId:'value-'+c.key,resetId:'reset-'+c.key},()=>state.adjustments[c.key],value=>state.adjustments[c.key]=value);
   row.append(heading,input);$(c.group==='detail'?'detail-controls':index<6?'light-controls':'colour-controls').append(row);
 }
+$('enable-sharpen').onclick=()=>{state.adjustments.sharpenAmount=100;commit();};
 addPrecisionControl($('straighten').previousElementSibling,{label:'Straighten',min:-15,max:15,step:.1,unit:'°',valueId:'straighten-value',resetId:'reset-straighten'},()=>state.straighten,value=>state.straighten=value);
 for(const [name,adjustments] of Object.entries(PRESETS)){
   const button=document.createElement('button');button.textContent=name;

@@ -1,12 +1,12 @@
 # Pixcell
 
-A non-destructive browser photo editor for DK. Version **0.3.0** adds edge-adaptive, noise-aware sharpening to exact adjustment entry, image inspection and local session recovery.
+A non-destructive browser photo editor for DK. Version **0.3.1** strengthens the sharpening response and adds explicit on/off feedback and an Enable sharpening button. Exact adjustment entry, image inspection and local session recovery remain available.
 
 ## Run
 
 Requires Node.js 22 or newer. No package installation or build step is needed.
 
-The test suite includes 24 engine/view/detail tests and browser workflows for Chromium, Firefox and WebKit at desktop and mobile widths. Browser tests run in GitHub Actions and must pass before the live demo deploys.
+The test suite includes 25 engine/view/detail tests and browser workflows for Chromium, Firefox and WebKit at desktop and mobile widths. Browser tests run in GitHub Actions and must pass before the live demo deploys.
 
 ```sh
 npm start
@@ -35,7 +35,7 @@ Open http://localhost:4173. Use `npm test` for engine tests and `npm run check` 
 
 ### Advanced sharpening
 
-Start with **Amount 100**, the default scale gains (80 / 110 / 60), **Noise protection 100** and **Halo allowance 0**. Inspect at **100%**, particularly skies, shadow areas and high-contrast edges. Raise noise protection for noisy images, reduce fine detail if grain becomes visible, and keep halo allowance at zero for strict local bounds. Zero amount bypasses the entire sharpening stage exactly. Reset buttons restore each detail control's starting value; Amount and Halo allowance return to zero.
+Click **Enable sharpening** or start with **Amount 100**, the default scale gains (80 / 110 / 60), **Noise protection 100** and **Halo allowance 0**. Inspect at **100%**, particularly skies, shadow areas and high-contrast edges. Raise noise protection for noisy images, reduce fine detail if grain becomes visible, and keep halo allowance at zero for strict local bounds. Zero amount bypasses the entire sharpening stage exactly and disables the dependent detail/noise/halo controls. The status shows whether sharpening is off or on. Reset buttons restore each detail control's starting value; Amount and Halo allowance return to zero.
 
 After Light and Colour, sRGB is linearised and converted to Oklab. Only its float32 L plane is filtered; a/b are retained on reconstruction. A global, bounded-sample MAD estimate uses a high-pass kernel normalised to unit noise energy. An alpha-aware guided filter builds a denoised guide; gradient strength, structure-tensor coherence and luminosity protection form a guided-feathered mask. Three successive guided detail bands use radii 1 / 3 / 6 at native size, separate gains, noise coring and 65% gain for positive detail. A local 5×5 min/max clamp limits overshoot. Halo allowance 0–20 corresponds to 0–0.02 in Oklab L. Out-of-gamut pixels reduce the L change while retaining a/b, rather than clipping RGB independently. Quantisation can still cause small chroma differences.
 
