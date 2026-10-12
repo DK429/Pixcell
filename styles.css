@@ -12,3 +12,15 @@
 @media(max-width:700px){.control-heading>label{flex-basis:100%}.control-value{width:100%}.control-value input.control-number{flex:1;width:0;height:40px;font-size:14px}.control-zero{width:40px;height:40px}.control{margin-bottom:18px}}
 
 .sharpening-toggle{margin:12px 0}.sharpening-toggle input{flex:none}#sharpen-legend{margin-bottom:14px}
+
+.layer-card {padding:12px;border:1px solid var(--border,#363b42);border-radius:10px;margin-bottom:12px;background:#242c25}
+.layer-card label {display:flex;justify-content:space-between;margin:8px 0}
+#brush-tools {padding:12px 0;border-bottom:1px solid #363b42;margin-bottom:16px}
+#brush-tools label {display:block;margin:12px 0 6px;font-size:12px}
+#brush-tools select {width:100%;max-width:100%;padding:10px}
+#brush-tools h3 {font-size:13px}
+#brush-cursor {position:absolute;pointer-events:none;border:1px solid white;box-shadow:0 0 0 1px #0008;border-radius:50%;transform:translate(-50%,-50%);z-index:8}
+.stage.brushing {cursor:crosshair}
+.apply-layer {position:sticky;bottom:0;background:#1a1d22;padding:10px 0;z-index:2}
+
+@media(max-width:700px){#sharpen-section{grid-column:1/-1}}
