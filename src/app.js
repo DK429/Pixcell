@@ -9,6 +9,7 @@ let draftCrop=null, renderVersion=0, loadVersion=0, previewTimer, toastTimer, ex
 let blocked=false,showClipping=false,view={mode:'fit',zoom:1,panX:0,panY:0};
 let autosaveEnabled=recoveryEnabled(),autosaveTimer,pendingRecovery=null;
 let worker=null, jobId=0;
+let previewProcessing=false,previewPending=false;
 const jobs=new Map();
 try {
   worker=new Worker(new URL('./worker.js',import.meta.url),{type:'module'});
@@ -16,10 +17,10 @@ try {
   worker.onerror=()=>{worker?.terminate();worker=null;for(const job of jobs.values())job.reject(new Error('Image processing interrupted. Please try again.'));jobs.clear();};
 } catch {worker=null;}
 
-function process(data,adjustments){
-  if(!worker){processPixels(data,adjustments);return Promise.resolve({data,bins:histogram(data)});}
+function process(data,adjustments,width,height,options={}){
+  if(!worker){processPixels(data,adjustments,width,height,options);return Promise.resolve({data,bins:histogram(data)});}
   const id=++jobId;
-  return new Promise((resolve,reject)=>{jobs.set(id,{resolve,reject});try{worker.postMessage({id,pixels:data.buffer,adjustments},[data.buffer]);}catch(error){jobs.delete(id);reject(error);}});
+  return new Promise((resolve,reject)=>{jobs.set(id,{resolve,reject});try{worker.postMessage({id,pixels:data.buffer,adjustments,width,height,options},[data.buffer]);}catch(error){jobs.delete(id);reject(error);}});
 }
 function toast(message){$('toast').textContent=message;$('toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').hidden=true,7000);}
 function status(message){$('status').textContent=message;}
@@ -64,8 +65,8 @@ function addPrecisionControl(heading,c,getValue,setValue){
     if(e.key==='Escape'){e.preventDefault();number.value=numberText(c,getValue());number.blur();}
   };
   const reset=document.createElement('button');reset.type='button';reset.className='control-zero';reset.id=c.resetId;reset.textContent='↺';
-  reset.title=`Reset ${c.label.toLowerCase()} to zero`;reset.setAttribute('aria-label',reset.title);
-  reset.onclick=()=>{if(getValue()===0)return;setValue(0);commit();};
+  reset.title=`Reset ${c.label.toLowerCase()} to ${c.default??0}`;reset.setAttribute('aria-label',reset.title);
+  reset.onclick=()=>{if(getValue()===(c.default??0))return;setValue(c.default??0);commit();};
   group.append(number);
   if(c.unit){const unit=document.createElement('span');unit.className='control-unit';unit.textContent=c.unit.trim();group.append(unit);}
   group.append(reset);heading.append(group);
@@ -75,12 +76,12 @@ for(const [index,c] of CONTROLS.entries()){
   const row=document.createElement('div');row.className='control';
   const heading=document.createElement('div');heading.className='control-heading';
   const label=document.createElement('label');label.htmlFor='control-'+c.key;label.textContent=c.label;
-  const input=document.createElement('input');input.type='range';input.id=label.htmlFor;input.min=c.min;input.max=c.max;input.step=c.step;input.value=0;
+  const input=document.createElement('input');input.type='range';input.id=label.htmlFor;input.min=c.min;input.max=c.max;input.step=c.step;input.value=c.default??0;
   input.oninput=()=>{state.adjustments[c.key]=Number(input.value);$('value-'+c.key).value=numberText(c,Number(input.value));schedulePreview();scheduleAutosave();};
   input.onchange=commit;
-  input.ondblclick=()=>{state.adjustments[c.key]=0;commit();};
+  input.ondblclick=()=>{state.adjustments[c.key]=c.default??0;commit();};
   heading.append(label);addPrecisionControl(heading,{...c,valueId:'value-'+c.key,resetId:'reset-'+c.key},()=>state.adjustments[c.key],value=>state.adjustments[c.key]=value);
-  row.append(heading,input);$(index<6?'light-controls':'colour-controls').append(row);
+  row.append(heading,input);$(c.group==='detail'?'detail-controls':index<6?'light-controls':'colour-controls').append(row);
 }
 addPrecisionControl($('straighten').previousElementSibling,{label:'Straighten',min:-15,max:15,step:.1,unit:'°',valueId:'straighten-value',resetId:'reset-straighten'},()=>state.straighten,value=>state.straighten=value);
 for(const [name,adjustments] of Object.entries(PRESETS)){
@@ -92,14 +93,16 @@ function previewEdit(){const edit=structuredClone(state);if(cropping){edit.crop=
 function currentLayout(edit=previewEdit()){return viewLayout(compositionSize(source.bitmap.width,source.bitmap.height,edit),$('stage').clientWidth,$('stage').clientHeight,cropping?{mode:'fit'}:view);}
 function schedulePreview(){++renderVersion;clearTimeout(previewTimer);if(source&&!exporting)status('Updating…');previewTimer=setTimeout(renderPreview,45);}
 async function renderPreview(){
-  if(!source)return;
+  if(!source||exporting)return;
+  if(previewProcessing){previewPending=true;return;}
+  previewProcessing=true;previewPending=false;
   const version=++renderVersion;
   const edit=previewEdit(),layout=currentLayout(edit);
   status('Updating…');
   try {
     const canvas=geometry(source.bitmap,edit,0,layout);
     const ctx=canvas.getContext('2d');const pixels=ctx.getImageData(0,0,canvas.width,canvas.height);
-    const output=await process(pixels.data,edit.adjustments);
+    const output=await process(pixels.data,edit.adjustments,canvas.width,canvas.height,{radiusScale:layout.scale});
     if(version!==renderVersion)return;
     if(showClipping&&!cropping&&!comparing)clippingOverlay(output.data);
     const preview=$('preview');preview.width=canvas.width;preview.height=canvas.height;
@@ -108,6 +111,7 @@ async function renderPreview(){
     layoutCanvas(layout);drawHistogram(output.bins);$('histogram-title').textContent=view.mode==='fit'||cropping?'HISTOGRAM':'HISTOGRAM · VIEWED AREA';
     status(cropping?'Drag a crop region':comparing?'Original · same composition':'All edits applied');
   } catch(error){if(version===renderVersion){status('Preview failed');toast(error.message);}}
+  finally{previewProcessing=false;if(previewPending){previewPending=false;schedulePreview();}}
 }
 function layoutCanvas(layout){
   const wrap=$('canvas-wrap'),canvas=$('preview');
@@ -293,11 +297,11 @@ function finishCrop(e){if(!cropStart)return;cropStart=null;if($('crop-overlay').
 $('crop-overlay').onpointerup=finishCrop;$('crop-overlay').onpointercancel=finishCrop;
 
 function download(blob,name){const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);}
-$('save-recipe').onclick=()=>{if(!source)return;const recipe={application:'dk-pixcell',version:2,source:{name:source.file.name,sha256:source.hash,width:source.bitmap.width,height:source.bitmap.height},state:structuredClone(state)};download(new Blob([JSON.stringify(recipe,null,2)],{type:'application/json'}),basename(source.file.name)+'.pixcell.json');toast('Edit recipe saved. Keep it with the original photograph.');};
+$('save-recipe').onclick=()=>{if(!source)return;const recipe={application:'dk-pixcell',version:3,source:{name:source.file.name,sha256:source.hash,width:source.bitmap.width,height:source.bitmap.height},state:structuredClone(state)};download(new Blob([JSON.stringify(recipe,null,2)],{type:'application/json'}),basename(source.file.name)+'.pixcell.json');toast('Edit recipe saved. Keep it with the original photograph.');};
 $('load-recipe').onclick=()=>$('recipe-file').click();
 $('recipe-file').onchange=async()=>{
   const file=$('recipe-file').files[0];const currentSource=source;
-  try{if(!file||!source)return;if(file.size>65536)throw new Error('That edit recipe is too large.');const recipe=JSON.parse(await file.text());if(source!==currentSource)throw new Error('The image changed. Load the recipe again.');if(recipe.application!=='dk-pixcell'||![1,2].includes(recipe.version))throw new Error('This is not a supported Pixcell recipe.');if(recipe.source?.sha256!==source.hash||recipe.source.width!==source.bitmap.width||recipe.source.height!==source.bitmap.height)throw new Error('Open the exact original photograph used to save these edits first.');state=validateState(recipe.state);comparing=false;exitCrop(false);commit();toast('Edit recipe loaded.');}catch(error){toast(error.message);}finally{$('recipe-file').value='';}
+  try{if(!file||!source)return;if(file.size>65536)throw new Error('That edit recipe is too large.');const recipe=JSON.parse(await file.text());if(source!==currentSource)throw new Error('The image changed. Load the recipe again.');if(recipe.application!=='dk-pixcell'||![1,2,3].includes(recipe.version))throw new Error('This is not a supported Pixcell recipe.');if(recipe.source?.sha256!==source.hash||recipe.source.width!==source.bitmap.width||recipe.source.height!==source.bitmap.height)throw new Error('Open the exact original photograph used to save these edits first.');state=validateState(recipe.state);comparing=false;exitCrop(false);commit();toast('Edit recipe loaded.');}catch(error){toast(error.message);}finally{$('recipe-file').value='';}
 };
 
 function exportDetails(){
@@ -316,7 +320,7 @@ $('export-form').onsubmit=async e=>{
   try {
     const edit=structuredClone(state),mime=$('export-format').value;
     const canvas=geometry(source.bitmap,edit,Number($('export-size').value));const ctx=canvas.getContext('2d');
-    const pixels=ctx.getImageData(0,0,canvas.width,canvas.height);const output=await process(pixels.data,edit.adjustments);
+    const pixels=ctx.getImageData(0,0,canvas.width,canvas.height);const output=await process(pixels.data,edit.adjustments,canvas.width,canvas.height);
     ctx.putImageData(new ImageData(output.data,canvas.width,canvas.height),0,0);
     if(mime==='image/jpeg'){ctx.globalCompositeOperation='destination-over';ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.globalCompositeOperation='source-over';}
     const blob=await new Promise(resolve=>canvas.toBlob(resolve,mime,Number($('quality').value)/100));
