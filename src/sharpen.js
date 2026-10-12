@@ -124,7 +124,8 @@ function sharpenTile(L,weight,w,h,settings,sigma,radii,scale){
   return out;
 }
 
-export function sharpenPixels(data,width,height,settings,{radiusScale=1,tileSize=256}={}){
+export function sharpenPixels(data,width,height,settings,{radiusScale=1,tileSize=256,effectMap=null}={}){
+  if(effectMap){if(effectMap.length!==data.length/4)throw new Error('Invalid sharpening effect buffer.');effectMap.fill(0);}
   if(!settings.sharpenAmount)return data;
   if(!Number.isInteger(width)||!Number.isInteger(height)||width<1||height<1||data.length!==width*height*4)throw new Error('Sharpening requires image dimensions.');
   if(!Number.isFinite(radiusScale)||!Number.isInteger(tileSize)||tileSize<1)throw new Error('Invalid sharpening scale or tile size.');
@@ -140,7 +141,24 @@ export function sharpenPixels(data,width,height,settings,{radiusScale=1,tileSize
     const tile=new Float32Array(w*h),weight=new Float32Array(w*h);
     for(let ty=0;ty<h;ty++)for(let tx=0;tx<w;tx++){const src=(top+ty)*width+left+tx,k=ty*w+tx;tile[k]=L[src];weight[k]=data[src*4+3]===255?1:0;}
     const out=sharpenTile(tile,weight,w,h,settings,sigma,radii,scale);
-    for(let cy=y;cy<bottom;cy++)for(let cx=x;cx<right;cx++){const i=cy*width+cx;if(data[i*4+3]===255)writeLightness(data,i*4,out[(cy-top)*w+cx-left]);}
+    for(let cy=y;cy<bottom;cy++)for(let cx=x;cx<right;cx++){
+      const i=cy*width+cx;if(data[i*4+3]!==255)continue;
+      const k=i*4,r=data[k],g=data[k+1],b=data[k+2];
+      writeLightness(data,k,out[(cy-top)*w+cx-left]);
+      // Measure actual final 8-bit pixel change, after all masks, bounds and gamut handling.
+      if(effectMap&&(r!==data[k]||g!==data[k+1]||b!==data[k+2]))effectMap[i]=Math.abs(toLab(data[k],data[k+1],data[k+2])[0]-L[i]);
+    }
   }
   return data;
+}
+
+export function effectMaskPixels(effectMap){
+  const pixels=new Uint8ClampedArray(effectMap.length*4);
+  for(let i=0;i<effectMap.length;i++){
+    // Fixed (not per-frame normalized) contrast: slider strength remains comparable.
+    // A 0.02 Oklab L change reaches white; unchanged pixels remain exactly black.
+    const v=effectMap[i]>0?Math.max(1,Math.round(255*Math.sqrt(clamp(effectMap[i]/.02)))):0;
+    pixels.set([v,v,v,255],i*4);
+  }
+  return pixels;
 }

@@ -1,4 +1,4 @@
-import {pixelCrop,compositionSize,outputSize} from './engine.js';
+import {pixelCrop,compositionSize,outputSize} from './engine.js?v=0.4.0';
 
 // Crop, orient and straighten once in native image coordinates, then sample the
 // requested viewport. Zoom never magnifies a cached reduced-resolution preview.

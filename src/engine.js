@@ -1,4 +1,4 @@
-import {sharpenPixels} from './sharpen.js';
+import {sharpenPixels} from './sharpen.js?v=0.4.0';
 export const CONTROLS = [
   {key:'exposure',label:'Exposure',min:-3,max:3,step:0.05,unit:' EV'},
   {key:'contrast',label:'Contrast',min:-100,max:100,step:1},
