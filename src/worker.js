@@ -1,5 +1,5 @@
-import {selectionPixels} from './mask.js?v=0.5.0';
-import {processPixels,histogram} from './engine.js?v=0.5.0';
+import {selectionPixels} from './mask.js?v=0.5.1';
+import {processPixels,histogram} from './engine.js?v=0.5.1';
 self.onmessage = ({data:{id,pixels,adjustments,width,height,options}}) => {
   try {
     const selectionMap=options?.showMask?new Float32Array(width*height):null;

@@ -1,4 +1,4 @@
-import {validateState} from './engine.js?v=0.5.0';
+import {validateState} from './engine.js?v=0.5.1';
 
 const DB_NAME='dk-pixcell-recovery',DRAFT_KEY='dk-pixcell-draft',PREFERENCE_KEY='dk-pixcell-autosave';
 let connection=null,queue=Promise.resolve();

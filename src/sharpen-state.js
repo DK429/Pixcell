@@ -1,5 +1,5 @@
-import {emptyLayer} from './mask.js?v=0.5.0';
-import {CONTROLS} from './engine.js?v=0.5.0';
+import {emptyLayer} from './mask.js?v=0.5.1';
+import {CONTROLS} from './engine.js?v=0.5.1';
 const keys=CONTROLS.filter(c=>c.group==='detail').map(c=>c.key);
 
 // Temporary sharpening belongs to the preview, not recipes, recovery or exports.

@@ -1,5 +1,5 @@
-import {validateLayer,emptyLayer} from './mask.js?v=0.5.0';
-import {sharpenPixels} from './sharpen.js?v=0.5.0';
+import {validateLayer,emptyLayer} from './mask.js?v=0.5.1';
+import {sharpenPixels} from './sharpen.js?v=0.5.1';
 export const CONTROLS = [
   {key:'exposure',label:'Exposure',min:-3,max:3,step:0.05,unit:' EV'},
   {key:'contrast',label:'Contrast',min:-100,max:100,step:1},
@@ -11,7 +11,7 @@ export const CONTROLS = [
   {key:'tint',label:'Tint',min:-100,max:100,step:1},
   {key:'saturation',label:'Saturation',min:-100,max:100,step:1},
   {key:'vibrance',label:'Vibrance',min:-100,max:100,step:1},
-  {key:'sharpenAmount',label:'Sharpen amount',min:0,max:200,step:1,group:'detail'},
+  {key:'sharpenAmount',label:'Sharpen amount',min:0,max:500,step:1,group:'detail'},
   {key:'edgeSuppression',label:'Detail suppression',min:0,max:8,step:.5,default:2,group:'detail'},
   {key:'edgeThreshold',label:'Edge threshold',min:0,max:100,step:1,default:15,group:'detail'},
   {key:'edgeWidth',label:'Edge width',min:0,max:8,step:.5,default:1,group:'detail'},

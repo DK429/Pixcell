@@ -1,4 +1,4 @@
-import {validateState} from './engine.js?v=0.5.0';
+import {validateState} from './engine.js?v=0.5.1';
 const encoder=new TextEncoder(),decoder=new TextDecoder('utf-8',{fatal:true});
 const MAX_SOURCE=50*1024*1024,MAX_MANIFEST=8*1024*1024;
 const table=Uint32Array.from({length:256},(_,i)=>{for(let j=0;j<8;j++)i=(i>>>1)^((i&1)?0xedb88320:0);return i>>>0;});
