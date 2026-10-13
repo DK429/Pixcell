@@ -1,11 +1,11 @@
-import {CONTROLS,PRESETS,defaults,validateState,compositionSize,outputSize,processPixels,histogram,clippingOverlay,History,clamp} from './engine.js?v=0.5.0';
-import {emptyLayer,inversePoint} from './mask.js?v=0.5.0';
-import {selectionPixels} from './mask.js?v=0.5.0';
-import {saveProject,readProject} from './project.js?v=0.5.0';
-import {geometry,imageTransform} from './geometry.js?v=0.5.0';
-import {SharpenSession} from './sharpen-state.js?v=0.5.0';
-import {viewLayout,zoomAt} from './view.js?v=0.5.0';
-import {recoveryEnabled,setRecoveryEnabled,writeDraft,saveSession,readSession,clearSession} from './recovery.js?v=0.5.0';
+import {CONTROLS,PRESETS,defaults,validateState,compositionSize,outputSize,processPixels,histogram,clippingOverlay,History,clamp} from './engine.js?v=0.5.1';
+import {emptyLayer,inversePoint} from './mask.js?v=0.5.1';
+import {selectionPixels} from './mask.js?v=0.5.1';
+import {saveProject,readProject} from './project.js?v=0.5.1';
+import {geometry,imageTransform} from './geometry.js?v=0.5.1';
+import {SharpenSession} from './sharpen-state.js?v=0.5.1';
+import {viewLayout,zoomAt} from './view.js?v=0.5.1';
+import {recoveryEnabled,setRecoveryEnabled,writeDraft,saveSession,readSession,clearSession} from './recovery.js?v=0.5.1';
 
 const $=id=>document.getElementById(id);
 const sharpening=new SharpenSession();
@@ -17,7 +17,7 @@ let worker=null, jobId=0;
 let previewProcessing=false,previewPending=false;
 const jobs=new Map();
 try {
-  worker=new Worker(new URL('./worker.js?v=0.5.0',import.meta.url),{type:'module'});
+  worker=new Worker(new URL('./worker.js?v=0.5.1',import.meta.url),{type:'module'});
   worker.onmessage=({data})=>{const job=jobs.get(data.id);if(!job)return;jobs.delete(data.id);data.error?job.reject(new Error(data.error)):job.resolve({data:new Uint8ClampedArray(data.pixels),bins:data.bins});};
   worker.onerror=()=>{worker?.terminate();worker=null;for(const job of jobs.values())job.reject(new Error('Image processing interrupted. Please try again.'));jobs.clear();};
 } catch {worker=null;}

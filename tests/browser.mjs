@@ -55,6 +55,11 @@ try {
   await page.locator('#enable-sharpen').click();await wait();await input('#control-sharpenAmount','200');await page.locator('#value-sharpenFine').fill('93');await page.locator('#value-sharpenFine').press('Enter');await wait();await page.locator('#reset-sharpenFine').click();await wait();
   await page.locator('#apply-sharpen').click();await wait();const appliedPhoto=await previewBytes();assert.notDeepEqual(appliedPhoto,unsharpened);assert.equal(await page.locator('#apply-sharpen').isEnabled(),false);
   await page.locator('#undo').click();await wait();assert.equal(await page.locator('#control-sharpenAmount').inputValue(),'0');assert.deepEqual(await previewBytes(),unsharpened);await page.locator('#redo').click();await wait();assert.equal(await page.locator('#control-sharpenAmount').inputValue(),'200');assert.deepEqual(await previewBytes(),appliedPhoto);
+  await page.locator('#enable-sharpen').click();await wait();await input('#control-sharpenAmount','500');assert.equal(await page.locator('#value-sharpenAmount').inputValue(),'500');
+  await page.locator('#sharpen-mask').uncheck();await wait();const maximumPhoto=await previewBytes();
+  const change=p=>p.reduce((n,v,i)=>n+Math.abs(v-unsharpened[i]),0);assert.ok(change(maximumPhoto)>change(appliedPhoto)*2);
+  await page.locator('#apply-sharpen').click();await wait();assert.deepEqual(await decodedPixels(await exportImage('image/png')),maximumPhoto);assert.equal(JSON.parse(await saveRecipe()).state.adjustments.sharpenAmount,500);
+  await page.locator('#undo').click();await wait();assert.deepEqual(await previewBytes(),appliedPhoto);check('Amount 500 produces over twice the pixel change of 200, exports correctly, saves and undoes');
   assert.deepEqual(await decodedPixels(await exportImage('image/png')),appliedPhoto);const sharpRecipeBytes=await saveRecipe();assert.equal(JSON.parse(sharpRecipeBytes).state.adjustments.sharpenAmount,200);
   await page.locator('#enable-sharpen').click();await wait();await page.locator('#sharpen-mask').check();await wait();await page.locator('#reset-sharpenAmount').click();await wait();const blackMask=await previewBytes();assert.deepEqual(blackMask,map100);
   await page.locator('#cancel-sharpen').click();await wait();assert.equal(await page.locator('#control-sharpenAmount').inputValue(),'200');assert.deepEqual(await previewBytes(),appliedPhoto);

@@ -54,7 +54,15 @@ test('tile boundaries are invariant, including image edges and scaled radii',()=
 });
 test('old recipes disable sharpening; invalid detail controls are rejected',()=>{
   const old=defaults();for(const key of Object.keys(old.adjustments))if(key.startsWith('sharpen'))delete old.adjustments[key];assert.deepEqual(validateState(old),defaults());
-  for(const [key,value] of [['sharpenAmount',201],['sharpenNoise',null],['sharpenFine','80'],['sharpenHalo',-1],['sharpenCoarse',Infinity]]){const state=defaults();state.adjustments[key]=value;assert.throws(()=>validateState(state));}
+  for(const [key,value] of [['sharpenAmount',501],['sharpenNoise',null],['sharpenFine','80'],['sharpenHalo',-1],['sharpenCoarse',Infinity]]){const state=defaults();state.adjustments[key]=value;assert.throws(()=>validateState(state));}
   const tiny=image(1,1,()=>[80,100,120,255]);processPixels(tiny,settings(),1,1);assert.deepEqual([...tiny],[80,100,120,255]);
   assert.throws(()=>processPixels(tiny,settings(),2,2));
+});
+
+test('upper strength range substantially steepens soft edges without changing selection or boosting flat noise',()=>{
+  const w=160,h=48,source=image(w,h,x=>{const v=Math.round(70+100/(1+Math.exp(-(x-80)/5)));return [v,v,v,255];}),before=rise(source,w,h),widths=[],maps=[];
+  for(const amount of [200,350,500]){const data=source.slice(),selectionMap=new Float32Array(w*h);processPixels(data,{...settings(),sharpenAmount:amount},w,h,{selectionMap});widths.push(rise(data,w,h));maps.push(selectionMap);for(let i=0;i<data.length;i+=4)assert.ok(data[i]>=70&&data[i]<=170);}
+  assert.ok(widths[2]<before*.65,JSON.stringify(widths));assert.ok(widths[2]<widths[1]&&widths[1]<widths[0]);assert.deepEqual(maps[0],maps[2]);
+  const random=noise(),flat=image(w,h,()=>{const v=Math.round(120+random()*5);return [v,v,v,255];}),flatSigma=sigma(flat);processPixels(flat,{...settings(),sharpenAmount:500},w,h);assert.ok(sigma(flat)/flatSigma<=1.05);
+  const state=defaults();state.adjustments.sharpenAmount=500;assert.equal(validateState(state).adjustments.sharpenAmount,500);
 });

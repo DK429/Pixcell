@@ -1,12 +1,12 @@
 # Pixcell
 
-A non-destructive browser photo editor for DK. Version **0.5.0** adds an editable Sharpening layer, a find-edges style selection mask, erase/restore brushes and portable `.pixcell` projects.
+A non-destructive browser photo editor for DK. Version **0.5.1** strengthens the upper sharpening range while retaining an editable Sharpening layer, a find-edges style selection mask, erase/restore brushes and portable `.pixcell` projects.
 
 ## Run
 
 Requires Node.js 22 or newer. No package installation or build step is needed.
 
-The test suite includes 37 engine/view/detail/project tests and browser workflows for Chromium, Firefox and WebKit at desktop and mobile widths. Browser tests run in GitHub Actions and must pass before the live demo deploys.
+The test suite includes 38 engine/view/detail/project tests and browser workflows for Chromium, Firefox and WebKit at desktop and mobile widths. Browser tests run in GitHub Actions and must pass before the live demo deploys.
 
 ```sh
 npm start
@@ -37,6 +37,8 @@ Open http://localhost:4173. Use `npm test` for engine tests and `npm run check` 
 ### Advanced sharpening
 
 Click **Add sharpening layer** or **Edit sharpening layer**. The **Show edge mask** toggle starts on for each image: white selects edges, grey selects them partially, black protects them. Unlike v0.4's amplified difference map, this is the actual selection used by sharpening. Amount and band gains do not change the selection; zero Amount leaves the mask visible while producing no sharpening.
+
+**Amount** now ranges from 0 to 500. Values through 200 retain their previous response. Above 200, gain rises faster and the local clamp radius expands progressively from two to six source pixels, allowing soft edges to steepen without exceeding surrounding lightness extrema (at Halo allowance 0). Mask selection and brush exclusions remain independent of Amount. The upper range is intentionally aggressive; layer opacity blends the result.
 
 **Detail suppression** smooths the denoised lightness guide before edge detection. **Edge threshold** rejects weak gradients, **Edge width** expands outlines and **Feather** softens the result. Structure coherence and luminosity protection are retained. The pre-detection smoothing and feather use three box passes (a Gaussian approximation). Detail bands remain edge-preserving guided filters at native radii 1 / 3 / 6, with noise coring, reduced bright-side gain, local overshoot bounds and Oklab lightness-only reconstruction. Fine gain now defaults to 40 to reduce texture enhancement.
 

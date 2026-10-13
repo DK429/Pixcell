@@ -22,7 +22,7 @@ let seed=123;const uniform=()=>{seed=(1664525*seed+1013904223)>>>0;return (seed+
 const noise=()=>Math.sqrt(-2*Math.log(uniform()))*Math.cos(2*Math.PI*uniform());
 const soft=fixture((x,y)=>70+100/(1+Math.exp(-(x-w/2-slope*(y-h/2))/5))),flat=fixture(()=>120+5*noise()),step=fixture((x,y)=>x<w/2+slope*(y-h/2)?70:170);
 const report={description:'Synthetic Oklab L metrics; approximate slanted-edge MTF with Hann-windowed LSF',before:{edge:edgeMetrics(soft),flatNoiseSigma:sigma(flat),stepOvershootPercent:overshoot(step)},runs:[]};
-for(const amount of [100,200]){
+for(const amount of [100,200,350,500]){
   const settings={...defaults().adjustments,sharpenAmount:amount},edge=soft.slice(),patch=flat.slice(),hard=step.slice(),start=performance.now();
   for(const data of [edge,patch,hard])processPixels(data,settings,w,h);
   report.runs.push({amount,edge:edgeMetrics(edge),flatNoiseSigma:sigma(patch),flatNoiseRatio:sigma(patch)/report.before.flatNoiseSigma,stepOvershootPercent:overshoot(hard),processingMilliseconds:performance.now()-start,pixelsProcessed:w*h*3});

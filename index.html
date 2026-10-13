@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#101215"><meta name="description" content="Edit photographs privately in your browser with Pixcell.">
-  <title>Pixcell · DK</title><link rel="stylesheet" href="./styles.css?v=0.5.0">
+  <title>Pixcell · DK</title><link rel="stylesheet" href="./styles.css?v=0.5.1">
 </head>
 <body>
   <header class="topbar">
@@ -14,7 +14,7 @@
   <input id="recipe-file" type="file" accept=".json" hidden>
   <main class="workspace">
     <aside class="tools" aria-label="Editing tools">
-      <div class="panel-heading"><span>DEVELOP</span><span class="version">v0.5.0</span></div>
+      <div class="panel-heading"><span>DEVELOP</span><span class="version">v0.5.1</span></div>
       <fieldset id="edit-controls" disabled>
         <section><h2>Looks</h2><div id="presets" class="presets"></div><p class="hint">A starting point. Fine-tune below.</p></section>
         <section><h2>Light</h2><div id="light-controls"></div></section>
@@ -30,7 +30,7 @@
           <label for="brush-strength">Strength</label><input id="brush-strength" type="range" min="1" max="100" value="100" aria-label="Brush strength">
           <div class="button-row"><button id="brush-undo" type="button">Undo brush</button><button id="brush-redo" type="button">Redo brush</button></div><p class="hint">Paint with one finger, Pencil or mouse. Two fingers pan / zoom. Restore removes painted exclusions; it does not select new edges.</p></div>
           <div id="detail-controls"></div><div class="button-row apply-layer"><button id="apply-sharpen" class="primary" type="button" disabled>Apply sharpening</button><button id="cancel-sharpen" type="button" disabled>Cancel</button></div>
-          <p class="hint">Suppression smooths texture before finding edges. Threshold rejects weak edges. Width expands their outlines; Feather softens the mask. Fine / medium / coarse set sharpening strength by scale. Apply keeps an editable layer; Cancel discards this preview. Inspect at 100% before exporting.</p>
+          <p class="hint">Amount 0–200 gives subtle to moderate sharpening; 200–500 adds strong edge contrast. Use layer opacity to blend the result. Suppression smooths texture before finding edges. Threshold rejects weak edges. Width expands their outlines; Feather softens the mask. Fine / medium / coarse set sharpening strength by scale. Apply keeps an editable layer; Cancel discards this preview. Inspect at 100% before exporting.</p>
         </section>
         <section><div class="section-title"><h2>Composition</h2><button id="clear-crop" class="text-button">Reset crop</button></div>
           <div class="button-row"><button id="crop-toggle">Crop</button><button id="rotate" aria-label="Rotate clockwise 90 degrees">↻ Rotate</button></div>
@@ -68,6 +68,6 @@
     <button id="download" type="submit" class="primary wide">Download image</button>
   </form></dialog>
   <div id="toast" class="toast" role="alert" hidden></div>
-  <script type="module" src="./src/app.js?v=0.5.0"></script>
+  <script type="module" src="./src/app.js?v=0.5.1"></script>
 </body>
 </html>

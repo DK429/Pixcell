@@ -1,4 +1,4 @@
-import {brushMask} from './mask.js?v=0.5.0';
+import {brushMask} from './mask.js?v=0.5.1';
 // Oklab matrices: https://bottosson.github.io/posts/oklab/
 // Guided filter: He, Sun & Tang, ECCV 2010. All filter planes use float32.
 const clamp=(x,a=0,b=1)=>Math.min(b,Math.max(a,x));
@@ -111,6 +111,10 @@ function sharpenTile(L,weight,w,h,settings,sigma,radii,scale){
   if(expand){mask=localExtrema(mask,weight,w,h,expand,false);for(let i=0;i<mask.length;i++)if(!Number.isFinite(mask[i]))mask[i]=0;}
   if(feather){const counts=boxSum(weight,w,h,feather);for(let n=0;n<3;n++)mask=mean(mask,weight,w,h,feather,counts);}
   for(let i=0;i<mask.length;i++)mask[i]=weight[i]?clamp(mask[i]):0;
+  // Preserve existing 0–200 edits; the upper range intentionally gives strong
+  // masked sharpening. Wider local bounds let soft edges steepen instead of
+  // clipping every increase to a two-pixel neighbourhood.
+  const amount=settings.sharpenAmount/100,strength=amount<=2?amount:2+3*(amount-2);
   const out=L.slice(),gains=[settings.sharpenFine,settings.sharpenMedium,settings.sharpenCoarse];let previous=L;
   for(let band=0;band<radii.length;band++){
     // A fixed detail floor is essential: sigma=0 must still sharpen a clean edge.
@@ -119,11 +123,11 @@ function sharpenTile(L,weight,w,h,settings,sigma,radii,scale){
     const bandNoise=noise*[1,.5,.25][band];
     for(let i=0;i<out.length;i++){
       const detail=previous[i]-base[i],cored=detail*smooth(Math.abs(detail),bandNoise,3*bandNoise);
-      out[i]+=settings.sharpenAmount/100*gains[band]/100*clamp(mask[i])*cored*(detail>0?.65:1);
+      out[i]+=strength*gains[band]/100*clamp(mask[i])*cored*(detail>0?.65:1);
     }
     previous=base;
   }
-  const halo=settings.sharpenHalo/1000,localR=radius(2),low=localExtrema(L,weight,w,h,localR,true),high=localExtrema(L,weight,w,h,localR,false);
+  const halo=settings.sharpenHalo/1000,localR=radius(2+4*clamp((settings.sharpenAmount-200)/300)),low=localExtrema(L,weight,w,h,localR,true),high=localExtrema(L,weight,w,h,localR,false);
   for(let i=0;i<out.length;i++){
     if(!weight[i]){out[i]=L[i];continue;}
     // Reapply extreme protection after feathering, and apply a hard local clamp.
